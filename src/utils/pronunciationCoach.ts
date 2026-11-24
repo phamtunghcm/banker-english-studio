@@ -1,5 +1,6 @@
 import type { WordScoreResult } from '../types/curriculum';
 import { scoreWordAlignment } from './wordScoring';
+import { lookupIpa } from './ipaDictionary';
 
 export interface PronunciationIssue {
   index: number;
@@ -7,6 +8,7 @@ export interface PronunciationIssue {
   cleanWord: string;
   spoken?: string;
   status: 'near' | 'missing';
+  ipa?: string;
   syllables: string;
   tip: string;
 }
@@ -108,6 +110,7 @@ export function analyzePronunciation(
       cleanWord,
       spoken: w.spoken,
       status: w.status,
+      ipa: lookupIpa(cleanWord) ?? undefined,
       syllables: splitSyllableHint(cleanWord),
       tip: buildCoachingTip(cleanWord, w.spoken, w.status),
     });

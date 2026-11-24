@@ -1,5 +1,6 @@
 let worker: Worker | null = null;
 let requestCounter = 0;
+let preloadStarted = false;
 
 function getWorker(): Worker {
   if (!worker) {
@@ -12,6 +13,33 @@ function getWorker(): Worker {
 
 export function isWhisperSupported(): boolean {
   return typeof Worker !== 'undefined' && typeof WebAssembly !== 'undefined';
+}
+
+export function preloadWhisper(onProgress?: (percent: number) => void): Promise<void> {
+  if (!isWhisperSupported()) return Promise.resolve();
+  if (preloadStarted) return Promise.resolve();
+  preloadStarted = true;
+
+  return new Promise((resolve) => {
+    const w = getWorker();
+    const id = ++requestCounter;
+    const handleMessage = (event: MessageEvent) => {
+      const data = event.data as {
+        id: number;
+        type: 'progress' | 'ready' | 'error';
+        progress?: number;
+      };
+      if (data.id !== id) return;
+      if (data.type === 'progress' && typeof data.progress === 'number') {
+        onProgress?.(data.progress);
+      } else {
+        w.removeEventListener('message', handleMessage);
+        resolve();
+      }
+    };
+    w.addEventListener('message', handleMessage);
+    w.postMessage({ id, type: 'preload' });
+  });
 }
 
 export function transcribeWithWhisper(

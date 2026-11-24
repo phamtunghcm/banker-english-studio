@@ -33,7 +33,7 @@ import {
   startKaraokeMicSession,
   type KaraokeMicHandle,
 } from '../utils/karaokeRecorder';
-import { transcribeWithWhisper } from '../utils/whisperEngine';
+import { preloadWhisper, transcribeWithWhisper } from '../utils/whisperEngine';
 import {
   CURATED_FEMALE_VOICES,
   isSpeechRecognitionSupported,
@@ -180,6 +180,7 @@ export function LessonPlayer({
   const [micLevel, setMicLevel] = useState(0);
   const [isAnalyzingAi, setIsAnalyzingAi] = useState(false);
   const [aiLoadProgress, setAiLoadProgress] = useState<number | null>(null);
+  const [showManualInput, setShowManualInput] = useState(false);
   const [recordedAudioUrl, setRecordedAudioUrl] = useState<string | null>(null);
   const [recordingFixWord, setRecordingFixWord] = useState<string | null>(null);
   const [fixedWords, setFixedWords] = useState<Record<string, boolean>>({});
@@ -298,6 +299,12 @@ export function LessonPlayer({
   const handleSelectTab = (tab: PlayerTab) => {
     stopAllAudioAndMic();
     setActiveTab(tab);
+    if (tab === 'shadowing') {
+      // Preload Whisper AI silently in background so first check is instant
+      void preloadWhisper((pct) => {
+        setAiLoadProgress(pct < 100 ? pct : null);
+      });
+    }
   };
 
   const playIndex = (index: number) => {
@@ -895,22 +902,33 @@ export function LessonPlayer({
             </p>
           )}
 
-          {/* Compact transcript box */}
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <textarea
-              rows={2}
-              value={spokenText}
-              onChange={(e) => setSpokenText(e.target.value)}
-              placeholder="Nhập hoặc dán câu bạn vừa nói (hoặc bấm Fn x2 / 🎤 bàn phím)..."
-              className="flex-1 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-900 placeholder-slate-400 focus:border-emerald-600 focus:outline-none"
-            />
+          {/* Optional Manual Transcript Check (collapsed by default for clean UX) */}
+          <div>
             <button
               type="button"
-              onClick={() => handleScoreShadowing(spokenText)}
-              className="shrink-0 rounded-xl border border-emerald-600 bg-emerald-50 px-4 py-2 text-xs font-bold text-emerald-900 hover:bg-emerald-100"
+              onClick={() => setShowManualInput((v) => !v)}
+              className="text-xs font-bold text-slate-500 underline-offset-2 hover:text-slate-800 hover:underline"
             >
-              Chấm điểm từng chữ
+              {showManualInput ? 'Ẩn ô nhập văn bản thủ công' : 'Hoặc nhập văn bản thủ công để kiểm tra'}
             </button>
+            {showManualInput && (
+              <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+                <textarea
+                  rows={2}
+                  value={spokenText}
+                  onChange={(e) => setSpokenText(e.target.value)}
+                  placeholder="Nhập hoặc dán câu bạn vừa nói..."
+                  className="flex-1 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-900 placeholder-slate-400 focus:border-emerald-600 focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => handleScoreShadowing(spokenText)}
+                  className="shrink-0 rounded-xl border border-emerald-600 bg-emerald-50 px-4 py-2 text-xs font-bold text-emerald-900 hover:bg-emerald-100"
+                >
+                  Chấm điểm từng chữ
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Focused Result & Word Fixer */}
@@ -960,8 +978,8 @@ export function LessonPlayer({
                             <span className="text-sm font-extrabold text-slate-900">
                               {issue.cleanWord}
                             </span>
-                            <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[11px] font-bold text-slate-600">
-                              {issue.syllables}
+                            <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[11px] font-bold text-slate-700">
+                              {issue.ipa ?? issue.syllables}
                             </span>
                             {isFixed ? (
                               <span className="rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-bold text-white">

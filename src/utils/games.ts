@@ -25,11 +25,13 @@ export interface ListenQuestion {
 export function buildListenQuestions(
   lessons: Lesson[],
   count: number,
-  rng: Rng = Math.random
+  rng: Rng = Math.random,
+  distractorLessons?: Lesson[]
 ): ListenQuestion[] {
   const sentences = collectSentences(lessons);
+  const poolSentences = distractorLessons ? collectSentences(distractorLessons) : sentences;
   const uniqueWords = Array.from(
-    new Map(sentences.map((s) => [s.clozeWord.toLowerCase(), s.clozeWord])).values()
+    new Map(poolSentences.map((s) => [s.clozeWord.toLowerCase(), s.clozeWord])).values()
   );
   if (uniqueWords.length < 4) return [];
 

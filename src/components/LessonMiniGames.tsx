@@ -8,6 +8,7 @@ import {
   Volume2,
 } from 'lucide-react';
 import type { GameId, Lesson } from '../types/curriculum';
+import { ALL_LESSONS } from '../data';
 import {
   buildListenQuestions,
   buildMatchPairs,
@@ -46,11 +47,16 @@ export function LessonMiniGames({
   const [matchMistakes, setMatchMistakes] = useState(0);
   const [matchDone, setMatchDone] = useState(false);
 
-  // 2. Listen & Catch keyword from this lesson
-  const listenQuestions = useMemo(
-    () => buildListenQuestions(singleLessonList, Math.min(4, lesson.sentences.length)),
-    [singleLessonList, lesson.sentences.length, roundSeed]
-  );
+  // 2. Listen & Catch keyword from this lesson (with rich distractors from same track)
+  const listenQuestions = useMemo(() => {
+    const sameTrackPool = ALL_LESSONS.filter((l) => l.track === lesson.track);
+    return buildListenQuestions(
+      singleLessonList,
+      Math.min(4, lesson.sentences.length),
+      Math.random,
+      sameTrackPool.length >= 2 ? sameTrackPool : ALL_LESSONS
+    );
+  }, [singleLessonList, lesson.track, lesson.sentences.length, roundSeed]);
   const [listenIdx, setListenIdx] = useState(0);
   const [listenScore, setListenScore] = useState(0);
   const [listenFeedback, setListenFeedback] = useState<'correct' | 'wrong' | null>(null);

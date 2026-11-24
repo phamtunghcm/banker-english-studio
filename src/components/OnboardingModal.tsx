@@ -133,32 +133,45 @@ export function OnboardingModal({
 
   return (
     <div className="mx-auto max-w-3xl rounded-2xl border border-slate-200 bg-white p-6 shadow-lg">
-      {/* Header & Stepper */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      {/* 5-Second Value Header + 1-Tap Skip to Trial */}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
         <div className="flex items-center gap-3">
           <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700">
             <Sparkles className="h-6 w-6" />
           </div>
           <div>
             <h1 className="text-xl font-extrabold text-slate-900">
-              Thiết lập Lộ trình Cá nhân hóa
+              Luyện Nghe – Nói Tiếng Anh Ngân Hàng với AI
             </h1>
             <p className="text-xs font-semibold text-slate-600">
-              Bước {step} / 2:{' '}
-              {step === 1
-                ? 'Chọn Lĩnh vực, Mục tiêu & Giọng đọc'
-                : 'Chọn Trình độ hoặc làm Test Năng lực đầu vào'}
+              32 chủ đề thực chiến • 5 giọng nữ bản xứ Neural • Chấm sửa từng chữ bằng Whisper AI (15p/ngày)
             </p>
           </div>
         </div>
+        <button
+          type="button"
+          onClick={() => finishWithLevel(initialLevel, 'Analyst (B1)')}
+          className="rounded-xl border border-emerald-600 bg-emerald-50 px-3.5 py-2 text-xs font-extrabold text-emerald-900 hover:bg-emerald-100"
+        >
+          Vào học thử ngay →
+        </button>
+      </div>
+
+      <div className="mt-4 flex items-center justify-between">
+        <p className="text-xs font-bold text-slate-500">
+          Bước {step} / 2:{' '}
+          {step === 1
+            ? 'Chọn Lĩnh vực, Mục tiêu & Giọng đọc'
+            : 'Chọn Trình độ hoặc làm Test Năng lực đầu vào'}
+        </p>
         <div className="flex items-center gap-1.5">
           <span
-            className={`h-2.5 w-10 rounded-full ${
+            className={`h-2 w-10 rounded-full ${
               step >= 1 ? 'bg-emerald-600' : 'bg-slate-200'
             }`}
           />
           <span
-            className={`h-2.5 w-10 rounded-full ${
+            className={`h-2 w-10 rounded-full ${
               step >= 2 ? 'bg-emerald-600' : 'bg-slate-200'
             }`}
           />

@@ -85,6 +85,7 @@ describe('LessonPlayer', () => {
     render(<LessonPlayer lesson={MOCK_LESSON} onComplete={onComplete} onBack={vi.fn()} />);
 
     fireEvent.click(screen.getByRole('button', { name: /Shadowing/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Hoặc nhập văn bản thủ công/i }));
     const fallbackInput = screen.getByPlaceholderText(/Nhập hoặc dán câu bạn vừa nói/i);
     fireEvent.change(fallbackInput, { target: { value: 'Our net interest margin expanded rapidly' } });
     fireEvent.click(screen.getByRole('button', { name: /Chấm điểm từng chữ/i }));
@@ -97,6 +98,7 @@ describe('LessonPlayer', () => {
     render(<LessonPlayer lesson={MOCK_LESSON} onComplete={vi.fn()} onBack={vi.fn()} />);
 
     fireEvent.click(screen.getByRole('button', { name: /Shadowing/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Hoặc nhập văn bản thủ công/i }));
     const fallbackInput = screen.getByPlaceholderText(/Nhập hoặc dán câu bạn vừa nói/i);
     fireEvent.change(fallbackInput, { target: { value: 'Our net interest magin expanded' } });
     fireEvent.click(screen.getByRole('button', { name: /Chấm điểm từng chữ/i }));
