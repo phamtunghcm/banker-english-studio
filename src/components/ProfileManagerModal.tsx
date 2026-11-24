@@ -137,8 +137,8 @@ export function ProfileManagerModal({
   const profileList = Object.values(store.profiles);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-900/45 p-4 backdrop-blur-sm">
-      <div className="w-full max-w-2xl space-y-5 rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/45 p-4 backdrop-blur-sm sm:items-center">
+      <div className="my-auto max-h-[90vh] w-full max-w-2xl space-y-5 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <UserCheck className="h-5 w-5 text-emerald-700" />
