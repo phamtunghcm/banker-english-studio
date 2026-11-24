@@ -1,35 +1,63 @@
 import { useEffect, useState } from 'react';
 import { ALL_LESSONS, CORE_LESSONS, ELECTIVE_LESSONS, WEEKLY_TESTS } from './data';
-import type { Lesson, LevelTier, RankTitle, UserProgress } from './types/curriculum';
+import type {
+  Lesson,
+  LevelTier,
+  MultiProfileStore,
+  RankTitle,
+  UserProgress,
+} from './types/curriculum';
 import {
   addCustomLesson,
+  createProfileInStore,
+  deleteProfileInStore,
   exportProgressJson,
   importProgressJson,
-  loadProgress,
+  loadMultiProfileStore,
   recordLessonResult,
   recordWeeklyTestResult,
-  saveProgress,
+  saveMultiProfileStore,
+  switchProfileInStore,
   toggleSavedWord,
+  updateProfileInStore,
 } from './utils/progressStore';
 import { OnboardingModal } from './components/OnboardingModal';
 import { DashboardView } from './components/DashboardView';
 import { LessonPlayer } from './components/LessonPlayer';
 import { WeeklyTestView } from './components/WeeklyTestView';
 import { CustomLessonModal } from './components/CustomLessonModal';
+import { ProfileManagerModal } from './components/ProfileManagerModal';
 
 export function App() {
-  const [progress, setProgress] = useState<UserProgress>(() => loadProgress());
+  const [store, setStore] = useState<MultiProfileStore>(() => loadMultiProfileStore());
   const [activeLesson, setActiveLesson] = useState<Lesson | null>(null);
   const [activeTestWeek, setActiveTestWeek] = useState<1 | 2 | 3 | 4 | null>(null);
   const [forceOnboarding, setForceOnboarding] = useState(false);
   const [showCustomModal, setShowCustomModal] = useState(false);
+  const [showProfileModal, setShowProfileModal] = useState(false);
+
+  const progress = store.profiles[store.activeProfileId];
 
   useEffect(() => {
-    saveProgress(progress);
-  }, [progress]);
+    saveMultiProfileStore(store);
+  }, [store]);
+
+  const updateActiveProgress = (updater: (prev: UserProgress) => UserProgress) => {
+    setStore((prevStore) => {
+      const current = prevStore.profiles[prevStore.activeProfileId];
+      if (!current) return prevStore;
+      return {
+        ...prevStore,
+        profiles: {
+          ...prevStore.profiles,
+          [prevStore.activeProfileId]: updater(current),
+        },
+      };
+    });
+  };
 
   const handleOnboardingComplete = (level: LevelTier, rank: RankTitle) => {
-    setProgress((prev) => ({
+    updateActiveProgress((prev) => ({
       ...prev,
       onboarded: true,
       selectedLevel: level,
@@ -44,14 +72,22 @@ export function App() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `banker-english-progress-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `banker-english-${progress.profile.id}-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
   };
 
   const handleImportJson = (raw: string) => {
     const parsed = importProgressJson(raw);
-    if (parsed) setProgress(parsed);
+    if (parsed) {
+      updateActiveProgress(() => ({
+        ...parsed,
+        profile: {
+          ...parsed.profile,
+          id: store.activeProfileId,
+        },
+      }));
+    }
   };
 
   const showOnboarding = !progress.onboarded || forceOnboarding;
@@ -71,10 +107,10 @@ export function App() {
           lesson={activeLesson}
           savedWords={(progress.savedWords ?? []).map((w) => w.word)}
           onToggleSaveWord={(word, ctx) =>
-            setProgress((prev) => toggleSavedWord(prev, word, ctx, activeLesson.id))
+            updateActiveProgress((prev) => toggleSavedWord(prev, word, ctx, activeLesson.id))
           }
           onComplete={(res) => {
-            setProgress((prev) =>
+            updateActiveProgress((prev) =>
               recordLessonResult(prev, activeLesson.id, {
                 shadowingBest: res.shadowingScore,
                 dictationBest: res.dictationScore,
@@ -89,7 +125,9 @@ export function App() {
           test={activeWeeklyTest}
           listeningLesson={listeningLessonForTest}
           onFinish={(score) => {
-            setProgress((prev) => recordWeeklyTestResult(prev, activeWeeklyTest.week, score));
+            updateActiveProgress((prev) =>
+              recordWeeklyTestResult(prev, activeWeeklyTest.week, score)
+            );
           }}
           onBack={() => setActiveTestWeek(null)}
         />
@@ -101,8 +139,9 @@ export function App() {
           onSelectLesson={(lesson) => setActiveLesson(lesson)}
           onStartWeeklyTest={(week) => setActiveTestWeek(week)}
           onOpenCustomModal={() => setShowCustomModal(true)}
+          onOpenProfileModal={() => setShowProfileModal(true)}
           onRemoveSavedWord={(word) =>
-            setProgress((prev) => toggleSavedWord(prev, word, '', ''))
+            updateActiveProgress((prev) => toggleSavedWord(prev, word, '', ''))
           }
           onExportJson={handleExportJson}
           onImportJson={handleImportJson}
@@ -114,9 +153,37 @@ export function App() {
         <CustomLessonModal
           onClose={() => setShowCustomModal(false)}
           onCreate={(lesson) => {
-            setProgress((prev) => addCustomLesson(prev, lesson));
+            updateActiveProgress((prev) => addCustomLesson(prev, lesson));
             setShowCustomModal(false);
             setActiveLesson(lesson);
+          }}
+        />
+      )}
+
+      {showProfileModal && (
+        <ProfileManagerModal
+          store={store}
+          onClose={() => setShowProfileModal(false)}
+          onSwitchProfile={(id) => {
+            setActiveLesson(null);
+            setActiveTestWeek(null);
+            setStore((prev) => switchProfileInStore(prev, id));
+          }}
+          onCreateProfile={(config, level) => {
+            const rankMap: Record<LevelTier, RankTitle> = {
+              foundation: 'Analyst (B1)',
+              professional: 'Senior Officer (B1+)',
+              executive: 'Manager (B2)',
+            };
+            setStore((prev) => createProfileInStore(prev, config, level, rankMap[level]));
+          }}
+          onUpdateActiveProfile={(updates, level) => {
+            setStore((prev) =>
+              updateProfileInStore(prev, prev.activeProfileId, updates, level)
+            );
+          }}
+          onDeleteProfile={(id) => {
+            setStore((prev) => deleteProfileInStore(prev, id));
           }}
         />
       )}

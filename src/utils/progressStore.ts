@@ -1,13 +1,17 @@
 import type {
   Lesson,
   LessonRecord,
+  LevelTier,
+  MultiProfileStore,
   RankTitle,
   SavedWord,
   Track,
+  UserProfileConfig,
   UserProgress,
 } from '../types/curriculum';
 
 export const STORAGE_KEY = 'banker_english_studio_v1';
+export const MULTI_STORE_KEY = 'banker_english_studio_profiles_v1';
 export const MASTERY_THRESHOLD = 75;
 
 const RANK_LADDER: RankTitle[] = [
@@ -17,11 +21,30 @@ const RANK_LADDER: RankTitle[] = [
   'VP / Director (C1)',
 ];
 
-export function createInitialProgress(): UserProgress {
+export function createDefaultProfileConfig(
+  overrides: Partial<UserProfileConfig> = {}
+): UserProfileConfig {
   return {
+    id: overrides.id ?? 'default-user',
+    name: overrides.name ?? 'Banker Member',
+    roleTitle: overrides.roleTitle ?? 'Chuyên viên Ngân hàng',
+    avatarColor: overrides.avatarColor ?? 'bg-emerald-600',
+    focusTracks: overrides.focusTracks ?? ['finance', 'credit', 'tech'],
+    goal: overrides.goal ?? 'executive_meeting',
+    dailyMinutesTarget: overrides.dailyMinutesTarget ?? 15,
+  };
+}
+
+export function createInitialProgress(
+  profileOverrides: Partial<UserProfileConfig> = {},
+  level: LevelTier = 'foundation',
+  rank: RankTitle = 'Analyst (B1)'
+): UserProgress {
+  return {
+    profile: createDefaultProfileConfig(profileOverrides),
     onboarded: false,
-    selectedLevel: 'foundation',
-    rank: 'Analyst (B1)',
+    selectedLevel: level,
+    rank,
     streakDays: 0,
     lastActiveDate: null,
     completedLessons: {},
@@ -31,7 +54,14 @@ export function createInitialProgress(): UserProgress {
   };
 }
 
-function isValidProgressShape(data: unknown): data is UserProgress {
+function isValidProgressShape(data: unknown): data is Partial<UserProgress> & {
+  onboarded: boolean;
+  selectedLevel: LevelTier;
+  rank: string;
+  streakDays: number;
+  completedLessons: Record<string, LessonRecord>;
+  weeklyTestScores: Record<number, { score: number; passed: boolean; completedAt: string }>;
+} {
   if (!data || typeof data !== 'object') return false;
   const obj = data as Record<string, unknown>;
   return (
@@ -48,18 +78,31 @@ function isValidProgressShape(data: unknown): data is UserProgress {
   );
 }
 
+function normalizeProgress(raw: Partial<UserProgress>): UserProgress {
+  const base = createInitialProgress();
+  return {
+    ...base,
+    ...raw,
+    profile: {
+      ...base.profile,
+      ...(raw.profile ?? {}),
+      focusTracks:
+        Array.isArray(raw.profile?.focusTracks) && raw.profile!.focusTracks.length > 0
+          ? raw.profile!.focusTracks
+          : base.profile.focusTracks,
+    },
+    savedWords: Array.isArray(raw.savedWords) ? raw.savedWords : [],
+    customLessons: Array.isArray(raw.customLessons) ? raw.customLessons : [],
+  };
+}
+
 export function loadProgress(): UserProgress {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return createInitialProgress();
     const parsed: unknown = JSON.parse(raw);
     if (!isValidProgressShape(parsed)) return createInitialProgress();
-    return {
-      ...createInitialProgress(),
-      ...parsed,
-      savedWords: Array.isArray(parsed.savedWords) ? parsed.savedWords : [],
-      customLessons: Array.isArray(parsed.customLessons) ? parsed.customLessons : [],
-    };
+    return normalizeProgress(parsed as Partial<UserProgress>);
   } catch {
     return createInitialProgress();
   }
@@ -71,6 +114,127 @@ export function saveProgress(progress: UserProgress): void {
   } catch {
     // Ignore storage quota errors silently
   }
+}
+
+export function loadMultiProfileStore(): MultiProfileStore {
+  try {
+    const raw = localStorage.getItem(MULTI_STORE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<MultiProfileStore>;
+      if (
+        parsed &&
+        typeof parsed.activeProfileId === 'string' &&
+        parsed.profiles &&
+        typeof parsed.profiles === 'object'
+      ) {
+        const normalizedProfiles: Record<string, UserProgress> = {};
+        for (const [id, p] of Object.entries(parsed.profiles)) {
+          if (isValidProgressShape(p)) {
+            normalizedProfiles[id] = normalizeProgress({
+              ...(p as Partial<UserProgress>),
+              profile: {
+                ...createDefaultProfileConfig({ id }),
+                ...((p as Partial<UserProgress>).profile ?? {}),
+                id,
+              },
+            });
+          }
+        }
+        if (Object.keys(normalizedProfiles).length > 0) {
+          const activeId = normalizedProfiles[parsed.activeProfileId]
+            ? parsed.activeProfileId
+            : Object.keys(normalizedProfiles)[0];
+          return { activeProfileId: activeId, profiles: normalizedProfiles };
+        }
+      }
+    }
+  } catch {
+    // Fallback to legacy migration or fresh store
+  }
+
+  const legacy = loadProgress();
+  const id = legacy.profile.id || 'default-user';
+  return {
+    activeProfileId: id,
+    profiles: { [id]: { ...legacy, profile: { ...legacy.profile, id } } },
+  };
+}
+
+export function saveMultiProfileStore(store: MultiProfileStore): void {
+  try {
+    localStorage.setItem(MULTI_STORE_KEY, JSON.stringify(store));
+  } catch {
+    // Ignore storage quota errors silently
+  }
+}
+
+export function createProfileInStore(
+  store: MultiProfileStore,
+  config: Omit<UserProfileConfig, 'id'>,
+  level: LevelTier = 'foundation',
+  rank: RankTitle = 'Analyst (B1)'
+): MultiProfileStore {
+  const id = `user-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  const newProgress = createInitialProgress({ ...config, id }, level, rank);
+  newProgress.onboarded = true;
+  return {
+    activeProfileId: id,
+    profiles: {
+      ...store.profiles,
+      [id]: newProgress,
+    },
+  };
+}
+
+export function switchProfileInStore(
+  store: MultiProfileStore,
+  profileId: string
+): MultiProfileStore {
+  if (!store.profiles[profileId]) return store;
+  return {
+    ...store,
+    activeProfileId: profileId,
+  };
+}
+
+export function updateProfileInStore(
+  store: MultiProfileStore,
+  profileId: string,
+  updates: Partial<UserProfileConfig>,
+  level?: LevelTier
+): MultiProfileStore {
+  const target = store.profiles[profileId];
+  if (!target) return store;
+  return {
+    ...store,
+    profiles: {
+      ...store.profiles,
+      [profileId]: {
+        ...target,
+        selectedLevel: level ?? target.selectedLevel,
+        profile: {
+          ...target.profile,
+          ...updates,
+        },
+      },
+    },
+  };
+}
+
+export function deleteProfileInStore(
+  store: MultiProfileStore,
+  profileId: string
+): MultiProfileStore {
+  const keys = Object.keys(store.profiles);
+  if (keys.length <= 1 || !store.profiles[profileId]) return store;
+  const nextProfiles = { ...store.profiles };
+  delete nextProfiles[profileId];
+  const nextActive =
+    store.activeProfileId === profileId ? Object.keys(nextProfiles)[0] : store.activeProfileId;
+  return {
+    activeProfileId: nextActive,
+    profiles: nextProfiles,
+  };
 }
 
 function getTodayIso(): string {
@@ -221,12 +385,7 @@ export function importProgressJson(raw: string): UserProgress | null {
   try {
     const parsed: unknown = JSON.parse(raw);
     if (!isValidProgressShape(parsed)) return null;
-    return {
-      ...createInitialProgress(),
-      ...parsed,
-      savedWords: Array.isArray(parsed.savedWords) ? parsed.savedWords : [],
-      customLessons: Array.isArray(parsed.customLessons) ? parsed.customLessons : [],
-    };
+    return normalizeProgress(parsed as Partial<UserProgress>);
   } catch {
     return null;
   }

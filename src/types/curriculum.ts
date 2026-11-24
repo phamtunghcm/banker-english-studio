@@ -8,6 +8,22 @@ export type Track =
 
 export type LevelTier = 'foundation' | 'professional' | 'executive';
 
+export type LearningGoal =
+  | 'executive_meeting'
+  | 'credit_committee'
+  | 'fintech_it'
+  | 'travel_daily';
+
+export interface UserProfileConfig {
+  id: string;
+  name: string;
+  roleTitle: string;
+  avatarColor: string;
+  focusTracks: Track[];
+  goal: LearningGoal;
+  dailyMinutesTarget: 15 | 30 | 45;
+}
+
 export type RankTitle =
   | 'Analyst (B1)'
   | 'Senior Officer (B1+)'
@@ -81,6 +97,7 @@ export interface SavedWord {
 }
 
 export interface UserProgress {
+  profile: UserProfileConfig;
   onboarded: boolean;
   selectedLevel: LevelTier;
   rank: RankTitle;
@@ -90,4 +107,9 @@ export interface UserProgress {
   weeklyTestScores: Record<number, WeeklyTestRecord>;
   savedWords?: SavedWord[];
   customLessons?: Lesson[];
+}
+
+export interface MultiProfileStore {
+  activeProfileId: string;
+  profiles: Record<string, UserProgress>;
 }

@@ -4,6 +4,11 @@ import {
   createInitialProgress,
   loadProgress,
   saveProgress,
+  loadMultiProfileStore,
+  createProfileInStore,
+  switchProfileInStore,
+  updateProfileInStore,
+  deleteProfileInStore,
   recordLessonResult,
   recordWeeklyTestResult,
   computeTrackStats,
@@ -116,5 +121,42 @@ describe('progressStore', () => {
     expect(imported?.selectedLevel).toBe('professional');
     expect(importProgressJson('{"bad": true}')).toBeNull();
     expect(importProgressJson('not json')).toBeNull();
+  });
+
+  it('supports creating, switching, customizing, and deleting isolated user profiles', () => {
+    let store = loadMultiProfileStore();
+    const initialId = store.activeProfileId;
+
+    store = createProfileInStore(
+      store,
+      {
+        name: 'Minh Legal',
+        roleTitle: 'Pháp chế',
+        avatarColor: 'bg-violet-600',
+        focusTracks: ['legal', 'credit'],
+        goal: 'credit_committee',
+        dailyMinutesTarget: 30,
+      },
+      'professional',
+      'Senior Officer (B1+)'
+    );
+
+    const newId = store.activeProfileId;
+    expect(newId).not.toBe(initialId);
+    expect(store.profiles[newId].profile.name).toBe('Minh Legal');
+    expect(store.profiles[newId].profile.focusTracks).toEqual(['legal', 'credit']);
+
+    store = updateProfileInStore(store, newId, { dailyMinutesTarget: 45 }, 'executive');
+    expect(store.profiles[newId].profile.dailyMinutesTarget).toBe(45);
+    expect(store.profiles[newId].selectedLevel).toBe('executive');
+
+    store = switchProfileInStore(store, initialId);
+    expect(store.activeProfileId).toBe(initialId);
+
+    store = deleteProfileInStore(store, newId);
+    expect(store.profiles[newId]).toBeUndefined();
+    // Cannot delete the last remaining profile
+    store = deleteProfileInStore(store, initialId);
+    expect(store.profiles[initialId]).toBeDefined();
   });
 });

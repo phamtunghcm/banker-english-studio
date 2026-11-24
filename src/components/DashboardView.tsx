@@ -17,9 +17,10 @@ import {
   Trash2,
   Trophy,
   Upload,
+  UserCog,
   Volume2,
 } from 'lucide-react';
-import type { Lesson, Track, UserProgress } from '../types/curriculum';
+import type { LearningGoal, Lesson, Track, UserProgress } from '../types/curriculum';
 import { computeTrackStats, isLessonMastered } from '../utils/progressStore';
 import { speakSentence } from '../utils/speechEngine';
 
@@ -30,11 +31,19 @@ interface DashboardViewProps {
   onSelectLesson: (lesson: Lesson) => void;
   onStartWeeklyTest: (week: 1 | 2 | 3 | 4) => void;
   onOpenCustomModal: () => void;
+  onOpenProfileModal: () => void;
   onRemoveSavedWord: (word: string) => void;
   onExportJson: () => void;
   onImportJson: (raw: string) => void;
   onReopenOnboarding: () => void;
 }
+
+const GOAL_LABELS: Record<LearningGoal, string> = {
+  executive_meeting: 'Họp & Thuyết trình',
+  credit_committee: 'Thẩm định Tín dụng',
+  fintech_it: 'Dự án Fintech / IT',
+  travel_daily: 'Công tác & Đời sống',
+};
 
 const WEEK_TITLES: Record<1 | 2 | 3 | 4, string> = {
   1: 'Tuần 1: Tài chính & Vận hành Ngân hàng',
@@ -62,12 +71,14 @@ export function DashboardView({
   onSelectLesson,
   onStartWeeklyTest,
   onOpenCustomModal,
+  onOpenProfileModal,
   onRemoveSavedWord,
   onExportJson,
   onImportJson,
   onReopenOnboarding,
 }: DashboardViewProps) {
   const [selectedWeek, setSelectedWeek] = useState<1 | 2 | 3 | 4>(1);
+  const [onlyMyTracks, setOnlyMyTracks] = useState(false);
   const [electiveFilter, setElectiveFilter] = useState<'all' | 'legal' | 'travel' | 'daily' | 'tech'>('all');
   const [importStatus, setImportStatus] = useState<string | null>(null);
 
@@ -101,21 +112,44 @@ export function DashboardView({
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
-      {/* Top Bar */}
+      {/* Top Bar with Active User Profile */}
       <header className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-xs font-bold uppercase tracking-wider text-emerald-800">
-              100% Local • Antigravity
-            </span>
-            <span className="text-xs font-semibold text-slate-600">Zero Cloud / Zero Cost</span>
+        <div className="flex items-center gap-3.5">
+          <button
+            type="button"
+            onClick={onOpenProfileModal}
+            className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-lg font-extrabold text-white shadow-sm transition hover:scale-105 ${progress.profile.avatarColor}`}
+            title="Quản lý & Tùy biến tài khoản"
+          >
+            {progress.profile.name.slice(0, 1).toUpperCase()}
+          </button>
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-base font-extrabold text-slate-900">
+                {progress.profile.name}
+              </span>
+              <span className="rounded-md border border-slate-200 bg-slate-100 px-2 py-0.5 text-[11px] font-bold text-slate-700">
+                {progress.profile.roleTitle}
+              </span>
+              <span className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-800">
+                Mục tiêu: {GOAL_LABELS[progress.profile.goal]} • {progress.profile.dailyMinutesTarget}p/ngày
+              </span>
+            </div>
+            <h1 className="mt-1 text-xl font-extrabold text-slate-900">
+              FinTech Banker English Studio
+            </h1>
           </div>
-          <h1 className="mt-1.5 text-2xl font-extrabold text-slate-900">
-            FinTech Banker English Studio
-          </h1>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={onOpenProfileModal}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-600 bg-emerald-50 px-3.5 py-2 text-xs font-bold text-emerald-800 hover:bg-emerald-100"
+          >
+            <UserCog className="h-3.5 w-3.5" />
+            Tài khoản & Tùy biến
+          </button>
           <button
             type="button"
             onClick={onOpenCustomModal}
@@ -235,30 +269,47 @@ export function DashboardView({
 
       {/* Week Selector & Lesson Grid */}
       <section className="space-y-4">
-        <div className="flex flex-wrap gap-2">
-          {([1, 2, 3, 4] as const).map((week) => (
-            <button
-              key={week}
-              type="button"
-              onClick={() => setSelectedWeek(week)}
-              className={`rounded-xl border px-4 py-2 text-sm font-bold transition ${
-                selectedWeek === week
-                  ? 'border-emerald-600 bg-emerald-600 text-white shadow-sm'
-                  : 'border-slate-300 bg-white text-slate-800 hover:bg-slate-100'
-              }`}
-            >
-              Tuần {week}
-            </button>
-          ))}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap gap-2">
+            {([1, 2, 3, 4] as const).map((week) => (
+              <button
+                key={week}
+                type="button"
+                onClick={() => setSelectedWeek(week)}
+                className={`rounded-xl border px-4 py-2 text-sm font-bold transition ${
+                  selectedWeek === week
+                    ? 'border-emerald-600 bg-emerald-600 text-white shadow-sm'
+                    : 'border-slate-300 bg-white text-slate-800 hover:bg-slate-100'
+                }`}
+              >
+                Tuần {week}
+              </button>
+            ))}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setOnlyMyTracks((v) => !v)}
+            className={`rounded-xl border px-3.5 py-2 text-xs font-bold transition ${
+              onlyMyTracks
+                ? 'border-emerald-600 bg-emerald-100 text-emerald-900'
+                : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
+            }`}
+          >
+            {onlyMyTracks ? '✓ Đang lọc theo lĩnh vực của bạn' : 'Lọc theo lĩnh vực của tôi'}
+          </button>
         </div>
 
         <h2 className="text-lg font-extrabold text-slate-900">{WEEK_TITLES[selectedWeek]}</h2>
 
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {weekLessons.map((lesson) => {
+          {weekLessons
+            .filter((l) => !onlyMyTracks || progress.profile.focusTracks.includes(l.track))
+            .map((lesson) => {
             const record = progress.completedLessons[lesson.id];
             const mastered = isLessonMastered(record);
             const meta = TRACK_META[lesson.track];
+            const isPreferred = progress.profile.focusTracks.includes(lesson.track);
             return (
               <button
                 key={lesson.id}
@@ -267,13 +318,20 @@ export function DashboardView({
                 className="flex flex-col justify-between rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:border-emerald-500 hover:bg-emerald-50/30"
               >
                 <div>
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between gap-2">
                     <span className="text-xs font-bold text-emerald-700">
                       Ngày {lesson.day}
                     </span>
-                    <span className="rounded-md border border-slate-200 bg-slate-100 px-2 py-0.5 text-[11px] font-bold text-slate-800">
-                      {meta.shortLabel}
-                    </span>
+                    <div className="flex items-center gap-1.5">
+                      {isPreferred && (
+                        <span className="rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold text-emerald-800">
+                          Phù hợp
+                        </span>
+                      )}
+                      <span className="rounded-md border border-slate-200 bg-slate-100 px-2 py-0.5 text-[11px] font-bold text-slate-800">
+                        {meta.shortLabel}
+                      </span>
+                    </div>
                   </div>
                   <h3 className="mt-2 font-bold text-slate-900">{lesson.title}</h3>
                   <p className="mt-1 text-xs font-medium text-slate-600">{lesson.scenario}</p>
