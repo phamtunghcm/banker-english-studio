@@ -14,6 +14,13 @@ export type LearningGoal =
   | 'fintech_it'
   | 'travel_daily';
 
+export type UiThemeId =
+  | 'crisp-light'
+  | 'warm-paper'
+  | 'private-banking'
+  | 'midnight'
+  | 'mint-focus';
+
 export interface UserProfileConfig {
   id: string;
   name: string;
@@ -22,6 +29,7 @@ export interface UserProfileConfig {
   focusTracks: Track[];
   goal: LearningGoal;
   dailyMinutesTarget: 15 | 30 | 45;
+  theme?: UiThemeId;
 }
 
 export type RankTitle =

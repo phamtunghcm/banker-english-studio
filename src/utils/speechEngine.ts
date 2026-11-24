@@ -6,13 +6,51 @@ export interface SpeechCallbacks {
 
 export type TonePreset = 'expressive' | 'executive' | 'coaching';
 
-export interface VoiceOption {
-  voiceURI: string;
-  name: string;
-  displayLabel: string;
-  lang: string;
-  recommended: boolean;
+export interface CuratedFemaleVoice {
+  id: string;
+  label: string;
+  preferredNames: string[];
+  pitchBoost: number;
+  rateFactor: number;
 }
+
+export const CURATED_FEMALE_VOICES: CuratedFemaleVoice[] = [
+  {
+    id: 'female-warm-us',
+    label: '1. Ava / Allison — Nữ Mỹ Ấm áp & Tự nhiên',
+    preferredNames: ['Ava (Premium)', 'Ava', 'Allison', 'Microsoft Aria', 'Google US English', 'Samantha'],
+    pitchBoost: 1.04,
+    rateFactor: 0.95,
+  },
+  {
+    id: 'female-exec-us',
+    label: '2. Samantha — Nữ Mỹ Thanh lịch (Executive)',
+    preferredNames: ['Samantha (Enhanced)', 'Samantha', 'Microsoft Jenny', 'Victoria', 'Google US English'],
+    pitchBoost: 1.01,
+    rateFactor: 0.98,
+  },
+  {
+    id: 'female-soft-au',
+    label: '3. Karen — Nữ Úc Dịu dàng & Dễ nghe',
+    preferredNames: ['Karen', 'Catherine', 'Samantha'],
+    pitchBoost: 1.03,
+    rateFactor: 0.95,
+  },
+  {
+    id: 'female-uk-classy',
+    label: '4. Serena / Kate — Nữ Anh Quốc Sang trọng',
+    preferredNames: ['Serena', 'Kate', 'Google UK English Female', 'Martha', 'Moira'],
+    pitchBoost: 1.02,
+    rateFactor: 0.97,
+  },
+  {
+    id: 'female-gentle-ie',
+    label: '5. Moira / Tessa — Nữ Nhẹ nhàng & Rõ âm',
+    preferredNames: ['Moira', 'Tessa', 'Karen'],
+    pitchBoost: 1.05,
+    rateFactor: 0.93,
+  },
+];
 
 interface SpeechRecognitionAlternativeLike {
   transcript: string;
@@ -78,101 +116,50 @@ if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
   };
 }
 
-// Filter out novelty/robotic macOS system voices
-const NOVELTY_VOICE_PATTERN =
-  /^(Albert|Bad News|Bahh|Bells|Boing|Bubbles|Cellos|Deranged|Eddy|Flo|Fred|Good News|Grandma|Grandpa|Hysterical|Jester|Junior|Kathy|Organ|Princess|Ralph|Reed|Rocko|Sandy|Shelley|Superstar|Trinoids|Whisper|Wobble|Zarvox)\b/i;
+// Exclude male & robotic/novelty macOS voices so only natural female voices are used
+const EXCLUDED_VOICE_PATTERN =
+  /^(Albert|Arthur|Aaron|Bad News|Bahh|Bells|Boing|Bubbles|Cellos|Daniel|Deranged|Eddy|Flo|Fred|Good News|Gordon|Grandma|Grandpa|Hysterical|Jester|Junior|Kathy|Martin|Oliver|Organ|Princess|Ralph|Reed|Rishi|Rocko|Sandy|Shelley|Superstar|Trinoids|Whisper|Wobble|Zarvox)\b|Male/i;
 
-const EXPRESSIVE_VOICES_META: { match: string; label: string }[] = [
-  { match: 'Ava (Premium)', label: '★ Ava Premium (Nữ Mỹ - Rất truyền cảm)' },
-  { match: 'Ava', label: '★ Ava (Nữ Mỹ - Truyền cảm)' },
-  { match: 'Samantha (Enhanced)', label: '★ Samantha Enhanced (Nữ Mỹ - Tự nhiên)' },
-  { match: 'Allison', label: '★ Allison (Nữ Mỹ - Ấm áp)' },
-  { match: 'Microsoft Aria', label: '★ Aria Natural (Nữ Mỹ - AI Tự nhiên)' },
-  { match: 'Microsoft Jenny', label: '★ Jenny Natural (Nữ Mỹ - Truyền cảm)' },
-  { match: 'Google US English', label: '★ Google US English (Nữ Mỹ - Rõ nét)' },
-  { match: 'Google UK English Female', label: '★ Google UK Female (Nữ Anh - Thanh lịch)' },
-  { match: 'Serena', label: '★ Serena (Nữ Anh - Sang trọng)' },
-  { match: 'Kate', label: '★ Kate (Nữ Anh - Chuẩn mực)' },
-  { match: 'Karen', label: '★ Karen (Nữ Úc - Dễ nghe)' },
-  { match: 'Moira', label: '★ Moira (Nữ Ireland - Nhẹ nhàng)' },
-  { match: 'Tessa', label: '★ Tessa (Nữ - Rõ chữ)' },
-  { match: 'Samantha', label: '★ Samantha (Nữ Mỹ - Phổ thông)' },
-  { match: 'Daniel', label: 'Daniel (Nam Anh - Trầm ấm)' },
-  { match: 'Google UK English Male', label: 'Google UK Male (Nam Anh - Lịch lãm)' },
-];
-
-function scoreVoiceExpressiveness(voice: SpeechSynthesisVoice): number {
-  const idx = EXPRESSIVE_VOICES_META.findIndex((p) => voice.name.includes(p.match));
-  if (idx !== -1) return 100 - idx;
-  if (/natural|neural|premium|enhanced|siri/i.test(voice.name)) return 75;
-  if (/female|woman/i.test(voice.name)) return 60;
-  if (voice.lang === 'en-US') return 40;
-  return 20;
+function getEnglishFemaleVoices(): SpeechSynthesisVoice[] {
+  const allEnglish = loadRawVoices().filter((v) => v.lang.startsWith('en'));
+  const femaleOnly = allEnglish.filter((v) => !EXCLUDED_VOICE_PATTERN.test(v.name));
+  return femaleOnly.length > 0 ? femaleOnly : allEnglish;
 }
 
-function formatVoiceLabel(voice: SpeechSynthesisVoice): { displayLabel: string; recommended: boolean } {
-  const matched = EXPRESSIVE_VOICES_META.find((p) => voice.name.includes(p.match));
-  if (matched) {
-    return { displayLabel: matched.label, recommended: true };
+function resolveCuratedVoice(presetId?: string): {
+  voice: SpeechSynthesisVoice | null;
+  preset: CuratedFemaleVoice;
+} {
+  const preset =
+    CURATED_FEMALE_VOICES.find((p) => p.id === presetId) ?? CURATED_FEMALE_VOICES[0];
+  const pool = getEnglishFemaleVoices();
+  if (pool.length === 0) return { voice: null, preset };
+
+  for (const preferred of preset.preferredNames) {
+    const match = pool.find((v) => v.name.includes(preferred));
+    if (match) return { voice: match, preset };
   }
-  const isNatural = /natural|neural|premium|enhanced|siri/i.test(voice.name);
+  return { voice: pool[0], preset };
+}
+
+function applyToneAndPreset(
+  baseRate: number,
+  tone: TonePreset,
+  preset: CuratedFemaleVoice
+): { rate: number; pitch: number } {
+  const toneRate = tone === 'expressive' ? 0.97 : tone === 'coaching' ? 0.85 : 1.0;
+  const tonePitch = tone === 'expressive' ? 1.02 : tone === 'coaching' ? 1.01 : 0.99;
   return {
-    displayLabel: `${isNatural ? '★ ' : ''}${voice.name} (${voice.lang})`,
-    recommended: isNatural,
+    rate: Math.max(0.65, Math.min(1.4, baseRate * preset.rateFactor * toneRate)),
+    pitch: Math.max(0.9, Math.min(1.15, preset.pitchBoost * tonePitch)),
   };
-}
-
-export function getAvailableEnglishVoices(): VoiceOption[] {
-  const english = loadRawVoices().filter(
-    (v) => v.lang.startsWith('en') && !NOVELTY_VOICE_PATTERN.test(v.name)
-  );
-  const sorted = [...english].sort(
-    (a, b) => scoreVoiceExpressiveness(b) - scoreVoiceExpressiveness(a)
-  );
-  return sorted.map((v) => {
-    const { displayLabel, recommended } = formatVoiceLabel(v);
-    return {
-      voiceURI: v.voiceURI,
-      name: v.name,
-      displayLabel,
-      lang: v.lang,
-      recommended,
-    };
-  });
-}
-
-function selectPreferredEnglishVoice(
-  voices: SpeechSynthesisVoice[],
-  preferredURI?: string
-): SpeechSynthesisVoice | null {
-  const english = voices.filter(
-    (v) => v.lang.startsWith('en') && !NOVELTY_VOICE_PATTERN.test(v.name)
-  );
-  if (english.length === 0) return null;
-  if (preferredURI) {
-    const exact = english.find((v) => v.voiceURI === preferredURI);
-    if (exact) return exact;
-  }
-  return [...english].sort(
-    (a, b) => scoreVoiceExpressiveness(b) - scoreVoiceExpressiveness(a)
-  )[0];
-}
-
-function applyTonePreset(baseRate: number, tone: TonePreset): { rate: number; pitch: number } {
-  if (tone === 'expressive') {
-    return { rate: Math.max(0.65, baseRate * 0.96), pitch: 1.05 };
-  }
-  if (tone === 'coaching') {
-    return { rate: Math.max(0.65, baseRate * 0.85), pitch: 1.02 };
-  }
-  return { rate: baseRate, pitch: 1.0 };
 }
 
 export function speakSentence(
   text: string,
   rate = 1.0,
   callbacks: SpeechCallbacks = {},
-  voiceURI?: string,
+  voicePresetId?: string,
   tone: TonePreset = 'expressive'
 ): void {
   stopSpeaking();
@@ -182,7 +169,8 @@ export function speakSentence(
     return;
   }
 
-  const adjusted = applyTonePreset(rate, tone);
+  const { voice, preset } = resolveCuratedVoice(voicePresetId);
+  const adjusted = applyToneAndPreset(rate, tone, preset);
   let boundarySeen = false;
   callbacks.onWordIndex?.(0);
 
@@ -210,10 +198,9 @@ export function speakSentence(
 
   try {
     const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = 'en-US';
+    utterance.lang = voice?.lang ?? 'en-US';
     utterance.rate = adjusted.rate;
     utterance.pitch = adjusted.pitch;
-    const voice = selectPreferredEnglishVoice(loadRawVoices(), voiceURI);
     if (voice) utterance.voice = voice;
 
     utterance.onboundary = (event: SpeechSynthesisEvent) => {

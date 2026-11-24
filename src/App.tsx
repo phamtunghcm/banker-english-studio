@@ -37,10 +37,15 @@ export function App() {
   const [showProfileModal, setShowProfileModal] = useState(false);
 
   const progress = store.profiles[store.activeProfileId];
+  const activeTheme = progress.profile.theme ?? 'crisp-light';
 
   useEffect(() => {
     saveMultiProfileStore(store);
   }, [store]);
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-ui-theme', activeTheme);
+  }, [activeTheme]);
 
   const updateActiveProgress = (updater: (prev: UserProgress) => UserProgress) => {
     setStore((prevStore) => {
@@ -99,7 +104,10 @@ export function App() {
     : null;
 
   return (
-    <main className="min-h-screen bg-slate-50 px-4 py-6 text-slate-900 sm:px-6 lg:px-8">
+    <main
+      data-ui-theme={activeTheme}
+      className="theme-surface min-h-screen bg-slate-50 px-4 py-6 text-slate-900 transition-colors sm:px-6 lg:px-8"
+    >
       {showOnboarding ? (
         <OnboardingModal onComplete={handleOnboardingComplete} />
       ) : activeLesson ? (
@@ -140,6 +148,11 @@ export function App() {
           onStartWeeklyTest={(week) => setActiveTestWeek(week)}
           onOpenCustomModal={() => setShowCustomModal(true)}
           onOpenProfileModal={() => setShowProfileModal(true)}
+          onChangeTheme={(theme) =>
+            setStore((prev) =>
+              updateProfileInStore(prev, prev.activeProfileId, { theme })
+            )
+          }
           onRemoveSavedWord={(word) =>
             updateActiveProgress((prev) => toggleSavedWord(prev, word, '', ''))
           }

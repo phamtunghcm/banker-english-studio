@@ -10,6 +10,7 @@ import {
   FilePlus2,
   Flame,
   Landmark,
+  Palette,
   Plane,
   RotateCcw,
   Scale,
@@ -20,9 +21,10 @@ import {
   UserCog,
   Volume2,
 } from 'lucide-react';
-import type { LearningGoal, Lesson, Track, UserProgress } from '../types/curriculum';
+import type { LearningGoal, Lesson, Track, UiThemeId, UserProgress } from '../types/curriculum';
 import { computeTrackStats, isLessonMastered } from '../utils/progressStore';
 import { speakSentence } from '../utils/speechEngine';
+import { UI_THEMES } from '../data/themes';
 
 interface DashboardViewProps {
   progress: UserProgress;
@@ -32,6 +34,7 @@ interface DashboardViewProps {
   onStartWeeklyTest: (week: 1 | 2 | 3 | 4) => void;
   onOpenCustomModal: () => void;
   onOpenProfileModal: () => void;
+  onChangeTheme: (theme: UiThemeId) => void;
   onRemoveSavedWord: (word: string) => void;
   onExportJson: () => void;
   onImportJson: (raw: string) => void;
@@ -72,6 +75,7 @@ export function DashboardView({
   onStartWeeklyTest,
   onOpenCustomModal,
   onOpenProfileModal,
+  onChangeTheme,
   onRemoveSavedWord,
   onExportJson,
   onImportJson,
@@ -187,6 +191,34 @@ export function DashboardView({
           {importStatus}
         </div>
       )}
+
+      {/* 5 UI Theme Options Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+        <span className="inline-flex items-center gap-2 text-xs font-bold text-slate-700">
+          <Palette className="h-4 w-4 text-emerald-600" />
+          Giao diện (5 tùy chọn):
+        </span>
+        <div className="flex flex-wrap gap-2">
+          {UI_THEMES.map((t) => {
+            const active = (progress.profile.theme ?? 'crisp-light') === t.id;
+            return (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => onChangeTheme(t.id)}
+                className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-bold transition ${
+                  active
+                    ? 'border-emerald-600 bg-emerald-50 text-emerald-900 ring-1 ring-emerald-600'
+                    : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
+                }`}
+              >
+                <span className={`h-3.5 w-3.5 rounded-full border ${t.swatchClass}`} />
+                {t.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
 
       {/* KPI Cards */}
       <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

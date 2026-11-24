@@ -5,3 +5,135 @@
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   }
 }
+
+/* 5 UI Themes powered by data-ui-theme on root */
+
+/* 1. Crisp Light (Default) - Nền trắng chữ đậm */
+[data-ui-theme='crisp-light'] .theme-surface {
+  background-color: #f8fafc;
+  color: #0f172a;
+}
+
+/* 2. Warm Paper - Giấy kem đọc sách dịu mắt */
+[data-ui-theme='warm-paper'] body,
+[data-ui-theme='warm-paper'] .theme-surface {
+  background-color: #f7f2e8;
+  color: #2c2218;
+}
+[data-ui-theme='warm-paper'] .bg-white {
+  background-color: #fffdf8;
+}
+[data-ui-theme='warm-paper'] .bg-slate-50 {
+  background-color: #f4ecde;
+}
+[data-ui-theme='warm-paper'] .border-slate-200,
+[data-ui-theme='warm-paper'] .border-slate-300 {
+  border-color: #e4d8c3;
+}
+[data-ui-theme='warm-paper'] .text-slate-900 {
+  color: #231a10;
+}
+[data-ui-theme='warm-paper'] .text-slate-700,
+[data-ui-theme='warm-paper'] .text-slate-600 {
+  color: #5c4b37;
+}
+
+/* 3. Private Banking - Xanh tài chính cao cấp */
+[data-ui-theme='private-banking'] body,
+[data-ui-theme='private-banking'] .theme-surface {
+  background-color: #eff4fb;
+  color: #0f1e36;
+}
+[data-ui-theme='private-banking'] .bg-white {
+  background-color: #ffffff;
+}
+[data-ui-theme='private-banking'] .bg-slate-50 {
+  background-color: #e8f0fa;
+}
+[data-ui-theme='private-banking'] .border-slate-200,
+[data-ui-theme='private-banking'] .border-slate-300 {
+  border-color: #cbd9ec;
+}
+[data-ui-theme='private-banking'] .bg-emerald-600 {
+  background-color: #1d4ed8;
+}
+[data-ui-theme='private-banking'] .hover\:bg-emerald-700:hover {
+  background-color: #1e40af;
+}
+[data-ui-theme='private-banking'] .border-emerald-600 {
+  border-color: #1d4ed8;
+}
+[data-ui-theme='private-banking'] .text-emerald-700,
+[data-ui-theme='private-banking'] .text-emerald-800 {
+  color: #1e40af;
+}
+
+/* 4. Midnight Studio - Tối ban đêm dịu mắt */
+[data-ui-theme='midnight'] body,
+[data-ui-theme='midnight'] .theme-surface {
+  background-color: #090d16;
+  color: #f1f5f9;
+}
+[data-ui-theme='midnight'] .bg-white {
+  background-color: #111827;
+}
+[data-ui-theme='midnight'] .bg-slate-50 {
+  background-color: #1e293b;
+}
+[data-ui-theme='midnight'] .bg-slate-100 {
+  background-color: #1f2937;
+}
+[data-ui-theme='midnight'] .border-slate-200,
+[data-ui-theme='midnight'] .border-slate-300 {
+  border-color: #334155;
+}
+[data-ui-theme='midnight'] .text-slate-900,
+[data-ui-theme='midnight'] .text-slate-800 {
+  color: #f8fafc;
+}
+[data-ui-theme='midnight'] .text-slate-700,
+[data-ui-theme='midnight'] .text-slate-600,
+[data-ui-theme='midnight'] .text-slate-500 {
+  color: #cbd5e1;
+}
+[data-ui-theme='midnight'] .bg-amber-50 {
+  background-color: #29200b;
+}
+[data-ui-theme='midnight'] .text-amber-900,
+[data-ui-theme='midnight'] .text-amber-800 {
+  color: #fcd34d;
+}
+[data-ui-theme='midnight'] .bg-emerald-50,
+[data-ui-theme='midnight'] .bg-emerald-50\/70,
+[data-ui-theme='midnight'] .bg-emerald-50\/40,
+[data-ui-theme='midnight'] .bg-emerald-50\/30 {
+  background-color: #0a2922;
+}
+[data-ui-theme='midnight'] .text-emerald-800,
+[data-ui-theme='midnight'] .text-emerald-700 {
+  color: #6ee7b7;
+}
+
+/* 5. Mint Focus - Bạc hà tươi mát tập trung */
+[data-ui-theme='mint-focus'] body,
+[data-ui-theme='mint-focus'] .theme-surface {
+  background-color: #ecf7f2;
+  color: #0c261d;
+}
+[data-ui-theme='mint-focus'] .bg-white {
+  background-color: #f9fefb;
+}
+[data-ui-theme='mint-focus'] .bg-slate-50 {
+  background-color: #e2f3eb;
+}
+[data-ui-theme='mint-focus'] .border-slate-200,
+[data-ui-theme='mint-focus'] .border-slate-300 {
+  border-color: #bfe0d0;
+}
+[data-ui-theme='mint-focus'] .text-slate-900 {
+  color: #0b241b;
+}
+[data-ui-theme='mint-focus'] .text-slate-700,
+[data-ui-theme='mint-focus'] .text-slate-600 {
+  color: #285242;
+}

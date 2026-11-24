@@ -22,14 +22,13 @@ import {
   scoreWordAlignment,
 } from '../utils/wordScoring';
 import {
-  getAvailableEnglishVoices,
+  CURATED_FEMALE_VOICES,
   isSpeechRecognitionSupported,
   speakSentence,
   startListening,
   stopListening,
   stopSpeaking,
   type TonePreset,
-  type VoiceOption,
 } from '../utils/speechEngine';
 
 type PlayerTab = 'subtitles' | 'shadowing' | 'dictation' | 'cloze';
@@ -134,8 +133,9 @@ export function LessonPlayer({
   const [loopSentence, setLoopSentence] = useState(false);
   const [rate, setRate] = useState(1.0);
   const [fontScale, setFontScale] = useState<'normal' | 'large'>('normal');
-  const [voices, setVoices] = useState<VoiceOption[]>(() => getAvailableEnglishVoices());
-  const [selectedVoiceURI, setSelectedVoiceURI] = useState<string>('');
+  const [selectedVoicePreset, setSelectedVoicePreset] = useState<string>(
+    CURATED_FEMALE_VOICES[0].id
+  );
   const [tonePreset, setTonePreset] = useState<TonePreset>('expressive');
 
   // Sub / No-Sub toggles
@@ -167,11 +167,7 @@ export function LessonPlayer({
   const currentDictResult = dictationResults[currentSentence.id] ?? null;
 
   useEffect(() => {
-    const refreshVoices = () => setVoices(getAvailableEnglishVoices());
-    refreshVoices();
-    const timer = setTimeout(refreshVoices, 400);
     return () => {
-      clearTimeout(timer);
       stopSpeaking();
       stopListening();
     };
@@ -231,7 +227,7 @@ export function LessonPlayer({
           setActiveWordIdx(null);
         },
       },
-      selectedVoiceURI || undefined,
+      selectedVoicePreset,
       tonePreset
     );
   };
@@ -239,7 +235,7 @@ export function LessonPlayer({
   const handleSpeakSingleWord = (word: string) => {
     const clean = word.replace(/^[^\w]+|[^\w]+$/g, '');
     if (!clean) return;
-    speakSentence(clean, 0.85, {}, selectedVoiceURI || undefined, tonePreset);
+    speakSentence(clean, 0.85, {}, selectedVoicePreset, tonePreset);
   };
 
   const handleTogglePlay = () => {
@@ -456,39 +452,36 @@ export function LessonPlayer({
               <option value="coaching">Ngữ điệu: Chậm rõ từng âm</option>
             </select>
 
-            {voices.length > 0 && (
-              <div className="inline-flex items-center gap-1">
-                <select
-                  aria-label="Giọng đọc"
-                  value={selectedVoiceURI}
-                  onChange={(e) => setSelectedVoiceURI(e.target.value)}
-                  className="max-w-64 truncate rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-800"
-                >
-                  <option value="">Giọng: Tự động (Nữ ưu tiên)</option>
-                  {voices.map((v) => (
-                    <option key={v.voiceURI} value={v.voiceURI}>
-                      {v.displayLabel}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  onClick={() =>
-                    speakSentence(
-                      'Hello, welcome to FinTech Banker English Studio.',
-                      rate,
-                      {},
-                      selectedVoiceURI || undefined,
-                      tonePreset
-                    )
-                  }
-                  className="rounded-full border border-emerald-300 bg-emerald-50 px-2.5 py-1.5 text-xs font-bold text-emerald-800 hover:bg-emerald-100"
-                  title="Nghe thử giọng đang chọn"
-                >
-                  Thử giọng
-                </button>
-              </div>
-            )}
+            <div className="inline-flex items-center gap-1">
+              <select
+                aria-label="Giọng nữ truyền cảm"
+                value={selectedVoicePreset}
+                onChange={(e) => setSelectedVoicePreset(e.target.value)}
+                className="max-w-64 truncate rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-800"
+              >
+                {CURATED_FEMALE_VOICES.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.label}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() =>
+                  speakSentence(
+                    'Hello, welcome to FinTech Banker English Studio.',
+                    rate,
+                    {},
+                    selectedVoicePreset,
+                    tonePreset
+                  )
+                }
+                className="rounded-full border border-emerald-300 bg-emerald-50 px-2.5 py-1.5 text-xs font-bold text-emerald-800 hover:bg-emerald-100"
+                title="Nghe thử giọng nữ đang chọn"
+              >
+                Thử giọng
+              </button>
+            </div>
 
             <button
               type="button"

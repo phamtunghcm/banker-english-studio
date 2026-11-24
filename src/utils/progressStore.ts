@@ -32,6 +32,7 @@ export function createDefaultProfileConfig(
     focusTracks: overrides.focusTracks ?? ['finance', 'credit', 'tech'],
     goal: overrides.goal ?? 'executive_meeting',
     dailyMinutesTarget: overrides.dailyMinutesTarget ?? 15,
+    theme: overrides.theme ?? 'crisp-light',
   };
 }
 
