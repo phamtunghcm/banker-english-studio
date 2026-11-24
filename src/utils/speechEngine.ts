@@ -107,8 +107,9 @@ function clearWordTimer() {
   }
 }
 
-export function stopSpeaking(): void {
+export function stopSpeaking(): boolean {
   clearWordTimer();
+  let cancelledSpeech = false;
   if (activeAudio) {
     try {
       activeAudio.pause();
@@ -123,11 +124,15 @@ export function stopSpeaking(): void {
   }
   if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
     try {
-      window.speechSynthesis.cancel();
+      if (window.speechSynthesis.speaking || window.speechSynthesis.pending) {
+        window.speechSynthesis.cancel();
+        cancelledSpeech = true;
+      }
     } catch {
       // Ignore synthesis cancel errors
     }
   }
+  return cancelledSpeech;
 }
 
 function computeToneRate(baseRate: number, tone: TonePreset): number {
@@ -150,7 +155,8 @@ function speakWithBrowserFallback(
   text: string,
   adjustedRate: number,
   voiceInfo: CuratedFemaleVoice,
-  callbacks: SpeechCallbacks
+  callbacks: SpeechCallbacks,
+  wasCancelled = false
 ): void {
   const words = text.trim().split(/\s+/).filter(Boolean);
   let boundarySeen = false;
@@ -178,36 +184,54 @@ function speakWithBrowserFallback(
     return;
   }
 
-  try {
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = voiceInfo.lang;
-    utterance.rate = adjustedRate;
-    utterance.pitch = 1.02;
+  const runSpeak = () => {
+    try {
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = voiceInfo.lang;
+      utterance.rate = adjustedRate;
+      utterance.pitch = 1.02;
 
-    utterance.onboundary = (event: SpeechSynthesisEvent) => {
-      if (typeof event.charIndex === 'number') {
-        boundarySeen = true;
+      const voices = window.speechSynthesis.getVoices?.() ?? [];
+      const matchingVoice =
+        voices.find((v) => v.lang === voiceInfo.lang) ??
+        voices.find((v) => v.lang.startsWith('en'));
+      if (matchingVoice) utterance.voice = matchingVoice;
+
+      utterance.onboundary = (event: SpeechSynthesisEvent) => {
+        if (typeof event.charIndex === 'number') {
+          boundarySeen = true;
+          clearWordTimer();
+          const prefix = text.slice(0, event.charIndex).trim();
+          const wordIdx = prefix ? prefix.split(/\s+/).length : 0;
+          callbacks.onWordIndex?.(Math.min(wordIdx, words.length - 1));
+        }
+      };
+
+      utterance.onend = () => {
         clearWordTimer();
-        const prefix = text.slice(0, event.charIndex).trim();
-        const wordIdx = prefix ? prefix.split(/\s+/).length : 0;
-        callbacks.onWordIndex?.(Math.min(wordIdx, words.length - 1));
+        callbacks.onEnd?.();
+      };
+
+      utterance.onerror = () => {
+        clearWordTimer();
+        callbacks.onError?.();
+      };
+
+      if (typeof window.speechSynthesis.resume === 'function') {
+        window.speechSynthesis.resume();
       }
-    };
-
-    utterance.onend = () => {
-      clearWordTimer();
-      callbacks.onEnd?.();
-    };
-
-    utterance.onerror = () => {
+      window.speechSynthesis.speak(utterance);
+    } catch {
       clearWordTimer();
       callbacks.onError?.();
-    };
+    }
+  };
 
-    window.speechSynthesis.speak(utterance);
-  } catch {
-    clearWordTimer();
-    callbacks.onError?.();
+  // Safari swallows speak() if called synchronously right after cancel()
+  if (wasCancelled && isSafariBrowser()) {
+    setTimeout(runSpeak, 60);
+  } else {
+    runSpeak();
   }
 }
 
@@ -223,7 +247,7 @@ export function speakSentence(
   tone: TonePreset = 'expressive',
   audioId?: string
 ): void {
-  stopSpeaking();
+  const wasCancelled = stopSpeaking();
   const words = text.trim().split(/\s+/).filter(Boolean);
   if (words.length === 0) {
     callbacks.onEnd?.();
@@ -264,20 +288,20 @@ export function speakSentence(
 
     audio.onerror = () => {
       activeAudio = null;
-      speakWithBrowserFallback(text, adjustedRate, voiceInfo, callbacks);
+      speakWithBrowserFallback(text, adjustedRate, voiceInfo, callbacks, wasCancelled);
     };
 
     const playPromise = audio.play();
     if (playPromise && typeof playPromise.catch === 'function') {
       playPromise.catch(() => {
         activeAudio = null;
-        speakWithBrowserFallback(text, adjustedRate, voiceInfo, callbacks);
+        speakWithBrowserFallback(text, adjustedRate, voiceInfo, callbacks, wasCancelled);
       });
     }
     return;
   }
 
-  speakWithBrowserFallback(text, adjustedRate, voiceInfo, callbacks);
+  speakWithBrowserFallback(text, adjustedRate, voiceInfo, callbacks, wasCancelled);
 }
 
 function getSpeechRecognitionCtor(): SpeechRecognitionCtor | null {
