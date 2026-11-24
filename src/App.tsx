@@ -24,7 +24,6 @@ import {
   updateProfileInStore,
 } from './utils/progressStore';
 import { setDefaultVoicePreset } from './utils/speechEngine';
-import { isValidAppsScriptUrl, loadHrWebhookUrl, syncProgressToHrSheet } from './utils/hrSync';
 import { OnboardingModal } from './components/OnboardingModal';
 import { DashboardView } from './components/DashboardView';
 import { LessonPlayer } from './components/LessonPlayer';
@@ -166,12 +165,9 @@ export function App() {
           test={activeWeeklyTest}
           listeningLesson={listeningLessonForTest}
           onFinish={(score) => {
-            const updated = recordWeeklyTestResult(progress, activeWeeklyTest.week, score);
-            updateActiveProgress(() => updated);
-            const webhook = loadHrWebhookUrl();
-            if (isValidAppsScriptUrl(webhook)) {
-              void syncProgressToHrSheet(webhook, updated, CORE_LESSONS.length);
-            }
+            updateActiveProgress((prev) =>
+              recordWeeklyTestResult(prev, activeWeeklyTest.week, score)
+            );
           }}
           onBack={() => setActiveTestWeek(null)}
         />

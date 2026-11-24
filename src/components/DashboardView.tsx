@@ -5,19 +5,15 @@ import {
   BookOpen,
   CheckCircle2,
   Coffee,
-  Copy,
   Cpu,
   Download,
   FilePlus2,
-  FileSpreadsheet,
   Flame,
   Landmark,
-  Link2,
   Palette,
   Plane,
   RotateCcw,
   Scale,
-  Send,
   Settings2,
   ShieldCheck,
   Sparkles,
@@ -34,14 +30,6 @@ import { CURATED_FEMALE_VOICES, speakSentence } from '../utils/speechEngine';
 import { buildPersonalRoadmap, getLessonsPerDay } from '../utils/roadmap';
 import { xpToLevel } from '../utils/games';
 import { UI_THEMES } from '../data/themes';
-import {
-  buildHrCsvContent,
-  GOOGLE_APPS_SCRIPT_TEMPLATE,
-  isValidAppsScriptUrl,
-  loadHrWebhookUrl,
-  saveHrWebhookUrl,
-  syncProgressToHrSheet,
-} from '../utils/hrSync';
 
 interface DashboardViewProps {
   progress: UserProgress;
@@ -100,9 +88,6 @@ export function DashboardView({
   const [selectedWeek, setSelectedWeek] = useState<1 | 2 | 3 | 4>(1);
   const [showSettings, setShowSettings] = useState(false);
   const [importStatus, setImportStatus] = useState<string | null>(null);
-  const [hrWebhookUrl, setHrWebhookUrl] = useState<string>(() => loadHrWebhookUrl());
-  const [hrSyncStatus, setHrSyncStatus] = useState<string | null>(null);
-  const [isSyncingHr, setIsSyncingHr] = useState(false);
 
   const allPool = [...lessons, ...electiveLessons];
   const personalRoadmap = buildPersonalRoadmap(progress, allPool);
@@ -135,51 +120,6 @@ export function DashboardView({
       }
     };
     reader.readAsText(file);
-  };
-
-  const handleExportCsv = () => {
-    const csv = buildHrCsvContent(progress, lessons.length);
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `bao-cao-tieng-anh-${progress.profile.id}-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const handleSyncHr = async () => {
-    saveHrWebhookUrl(hrWebhookUrl);
-    setIsSyncingHr(true);
-    setHrSyncStatus(null);
-    const res = await syncProgressToHrSheet(hrWebhookUrl, progress, lessons.length);
-    setHrSyncStatus(res.message);
-    setIsSyncingHr(false);
-  };
-
-  const handleCopyShareLink = async () => {
-    if (!isValidAppsScriptUrl(hrWebhookUrl)) {
-      setHrSyncStatus('Hãy dán đúng link Google Apps Script (/exec) trước khi tạo link chia sẻ.');
-      return;
-    }
-    saveHrWebhookUrl(hrWebhookUrl);
-    const base = `${window.location.origin}${window.location.pathname}`;
-    const shareUrl = `${base}?hr_webhook=${encodeURIComponent(hrWebhookUrl.trim())}`;
-    try {
-      await navigator.clipboard.writeText(shareUrl);
-      setHrSyncStatus('Đã sao chép link nội bộ gắn sẵn Google Sheet HR — gửi link này cho nhân sự dùng ngay!');
-    } catch {
-      setHrSyncStatus(`Link chia sẻ: ${shareUrl}`);
-    }
-  };
-
-  const handleCopyScript = async () => {
-    try {
-      await navigator.clipboard.writeText(GOOGLE_APPS_SCRIPT_TEMPLATE);
-      setHrSyncStatus('Đã sao chép mã Google Apps Script! Dán vào Extensions → Apps Script trong Google Sheet rồi Deploy Web App.');
-    } catch {
-      setHrSyncStatus('Không thể copy tự động — bạn có thể lấy mã trong file docs/google-apps-script-hr-sync.gs.');
-    }
   };
 
   const filteredTopics = allPool.filter(
@@ -682,75 +622,6 @@ export function DashboardView({
                   </button>
                 ))}
               </div>
-            )}
-          </div>
-
-          {/* HR Google Sheet Sync (0đ/tháng) */}
-          <div className="space-y-3 rounded-2xl border border-emerald-200 bg-white p-5 shadow-sm">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <FileSpreadsheet className="h-4 w-4 text-emerald-700" />
-                <h2 className="text-sm font-extrabold text-slate-900">
-                  Đồng bộ Báo cáo HR (Google Sheet — 0đ/tháng)
-                </h2>
-              </div>
-              <button
-                type="button"
-                onClick={handleExportCsv}
-                className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-slate-50 px-2.5 py-1 text-xs font-bold text-slate-800 hover:bg-slate-100"
-              >
-                <Download className="h-3.5 w-3.5" />
-                Xuất Excel / CSV
-              </button>
-            </div>
-
-            <p className="text-xs font-medium text-slate-600">
-              Dán URL Web App từ Google Apps Script để gửi điểm tuần, Streak & Xếp hạng về bảng tổng hợp HR (tự động gửi khi thi xong mỗi tuần).
-            </p>
-
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <input
-                type="url"
-                value={hrWebhookUrl}
-                onChange={(e) => setHrWebhookUrl(e.target.value)}
-                onBlur={() => saveHrWebhookUrl(hrWebhookUrl)}
-                placeholder="https://script.google.com/macros/s/.../exec"
-                className="flex-1 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-900 placeholder-slate-400 focus:border-emerald-600 focus:outline-none"
-              />
-              <button
-                type="button"
-                disabled={isSyncingHr}
-                onClick={() => void handleSyncHr()}
-                className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-bold text-white hover:bg-emerald-700 disabled:opacity-50"
-              >
-                <Send className="h-3.5 w-3.5" />
-                {isSyncingHr ? 'Đang gửi...' : 'Gửi báo cáo ngay'}
-              </button>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => void handleCopyScript()}
-                className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-slate-50 px-2.5 py-1 text-[11px] font-bold text-slate-700 hover:bg-slate-100"
-              >
-                <Copy className="h-3 w-3" />
-                Copy mã Google Apps Script
-              </button>
-              <button
-                type="button"
-                onClick={() => void handleCopyShareLink()}
-                className="inline-flex items-center gap-1 rounded-lg border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-800 hover:bg-emerald-100"
-              >
-                <Link2 className="h-3 w-3" />
-                Copy link nội bộ cho nhân sự
-              </button>
-            </div>
-
-            {hrSyncStatus && (
-              <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-900">
-                {hrSyncStatus}
-              </p>
             )}
           </div>
 
