@@ -1,4 +1,10 @@
-export type Track = 'finance' | 'credit' | 'tech';
+export type Track =
+  | 'finance'
+  | 'credit'
+  | 'tech'
+  | 'legal'
+  | 'travel'
+  | 'daily';
 
 export type LevelTier = 'foundation' | 'professional' | 'executive';
 

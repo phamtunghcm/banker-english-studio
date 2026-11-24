@@ -4,12 +4,15 @@ import {
   Bookmark,
   BookOpen,
   CheckCircle2,
+  Coffee,
   Cpu,
   Download,
   FilePlus2,
   Flame,
   Landmark,
+  Plane,
   RotateCcw,
+  Scale,
   ShieldCheck,
   Trash2,
   Trophy,
@@ -23,6 +26,7 @@ import { speakSentence } from '../utils/speechEngine';
 interface DashboardViewProps {
   progress: UserProgress;
   lessons: Lesson[];
+  electiveLessons: Lesson[];
   onSelectLesson: (lesson: Lesson) => void;
   onStartWeeklyTest: (week: 1 | 2 | 3 | 4) => void;
   onOpenCustomModal: () => void;
@@ -39,15 +43,22 @@ const WEEK_TITLES: Record<1 | 2 | 3 | 4, string> = {
   4: 'Tuần 4: Giao tiếp & Thuyết trình Cấp cao',
 };
 
-const TRACK_META: Record<Track, { label: string; shortLabel: string; color: string; icon: typeof Landmark }> = {
+const TRACK_META: Record<
+  Track,
+  { label: string; shortLabel: string; color: string; icon: typeof Landmark }
+> = {
   finance: { label: 'Tài chính (Finance)', shortLabel: 'Tài chính', color: 'bg-emerald-500', icon: Landmark },
   credit: { label: 'Tín dụng (Credit)', shortLabel: 'Tín dụng', color: 'bg-amber-500', icon: ShieldCheck },
-  tech: { label: 'Công nghệ (Banking Tech)', shortLabel: 'Công nghệ', color: 'bg-sky-500', icon: Cpu },
+  tech: { label: 'CNTT & Fintech', shortLabel: 'CNTT', color: 'bg-sky-500', icon: Cpu },
+  legal: { label: 'Pháp chế (Legal)', shortLabel: 'Pháp chế', color: 'bg-violet-500', icon: Scale },
+  travel: { label: 'Du lịch & Công tác', shortLabel: 'Du lịch', color: 'bg-cyan-500', icon: Plane },
+  daily: { label: 'Đời sống hàng ngày', shortLabel: 'Đời sống', color: 'bg-rose-500', icon: Coffee },
 };
 
 export function DashboardView({
   progress,
   lessons,
+  electiveLessons,
   onSelectLesson,
   onStartWeeklyTest,
   onOpenCustomModal,
@@ -57,6 +68,7 @@ export function DashboardView({
   onReopenOnboarding,
 }: DashboardViewProps) {
   const [selectedWeek, setSelectedWeek] = useState<1 | 2 | 3 | 4>(1);
+  const [electiveFilter, setElectiveFilter] = useState<'all' | 'legal' | 'travel' | 'daily' | 'tech'>('all');
   const [importStatus, setImportStatus] = useState<string | null>(null);
 
   const trackStats = computeTrackStats(progress, lessons);
@@ -319,6 +331,81 @@ export function DashboardView({
               <span className="font-bold text-amber-300">Làm bài →</span>
             </div>
           </button>
+        </div>
+      </section>
+
+      {/* Elective Topics Section: Legal, Travel, Daily Life, IT */}
+      <section className="space-y-4 rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-bold text-white">
+              Chủ đề Mở rộng (Pháp chế • Du lịch • Đời sống • CNTT)
+            </h2>
+            <p className="text-xs text-slate-400">
+              Luyện thêm tình huống giao tiếp thực tế ngoài lộ trình 28 ngày
+            </p>
+          </div>
+
+          <div className="flex flex-wrap gap-1.5">
+            {[
+              { id: 'all', label: 'Tất cả' },
+              { id: 'legal', label: 'Pháp chế' },
+              { id: 'travel', label: 'Du lịch' },
+              { id: 'daily', label: 'Đời sống' },
+              { id: 'tech', label: 'CNTT' },
+            ].map((f) => (
+              <button
+                key={f.id}
+                type="button"
+                onClick={() =>
+                  setElectiveFilter(f.id as 'all' | 'legal' | 'travel' | 'daily' | 'tech')
+                }
+                className={`rounded-lg border px-3 py-1 text-xs font-semibold transition ${
+                  electiveFilter === f.id
+                    ? 'border-emerald-500 bg-emerald-500/20 text-emerald-300'
+                    : 'border-slate-700 bg-slate-950 text-slate-400 hover:bg-slate-800'
+                }`}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+          {electiveLessons
+            .filter((el) => electiveFilter === 'all' || el.track === electiveFilter)
+            .map((lesson) => {
+              const meta = TRACK_META[lesson.track];
+              const record = progress.completedLessons[lesson.id];
+              const mastered = isLessonMastered(record);
+              return (
+                <button
+                  key={lesson.id}
+                  type="button"
+                  onClick={() => onSelectLesson(lesson)}
+                  className="flex flex-col justify-between rounded-xl border border-slate-800 bg-slate-950/70 p-4 text-left transition hover:border-emerald-500/50 hover:bg-slate-800/70"
+                >
+                  <div>
+                    <span className="inline-block rounded-md bg-slate-800 px-2 py-0.5 text-[11px] font-semibold text-slate-300">
+                      {meta.shortLabel}
+                    </span>
+                    <h3 className="mt-2 text-sm font-semibold text-white">{lesson.title}</h3>
+                    <p className="mt-1 text-xs text-slate-400">{lesson.scenario}</p>
+                  </div>
+                  <div className="mt-3 flex items-center justify-between border-t border-slate-800/80 pt-2.5 text-xs">
+                    {record ? (
+                      <span className={mastered ? 'text-emerald-400' : 'text-amber-300'}>
+                        Nói: {record.shadowingBest}%
+                      </span>
+                    ) : (
+                      <span className="text-slate-500">4 câu</span>
+                    )}
+                    <span className="font-semibold text-emerald-300">Luyện →</span>
+                  </div>
+                </button>
+              );
+            })}
         </div>
       </section>
 

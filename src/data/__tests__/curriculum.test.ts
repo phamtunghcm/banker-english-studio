@@ -1,21 +1,30 @@
 import { describe, it, expect } from 'vitest';
-import { ALL_LESSONS, WEEKLY_TESTS, PLACEMENT_QUESTIONS } from '../index';
+import {
+  ALL_LESSONS,
+  CORE_LESSONS,
+  ELECTIVE_LESSONS,
+  WEEKLY_TESTS,
+  PLACEMENT_QUESTIONS,
+} from '../index';
 
 describe('curriculum data integrity', () => {
-  it('contains 24 lessons across 4 weeks and 6 days per week with unique IDs', () => {
-    expect(ALL_LESSONS).toHaveLength(24);
+  it('contains 24 core roadmap lessons and 8 elective lessons with unique IDs', () => {
+    expect(CORE_LESSONS).toHaveLength(24);
+    expect(ELECTIVE_LESSONS).toHaveLength(8);
+    expect(ALL_LESSONS).toHaveLength(32);
+
     const ids = new Set(ALL_LESSONS.map((l) => l.id));
-    expect(ids.size).toBe(24);
+    expect(ids.size).toBe(32);
 
     for (const week of [1, 2, 3, 4] as const) {
-      const weekLessons = ALL_LESSONS.filter((l) => l.week === week);
+      const weekLessons = CORE_LESSONS.filter((l) => l.week === week);
       expect(weekLessons).toHaveLength(6);
     }
   });
 
-  it('covers all three banking tracks: finance, credit, and tech', () => {
+  it('covers all 6 tracks: finance, credit, tech, legal, travel, and daily', () => {
     const tracks = new Set(ALL_LESSONS.map((l) => l.track));
-    expect(tracks).toEqual(new Set(['finance', 'credit', 'tech']));
+    expect(tracks).toEqual(new Set(['finance', 'credit', 'tech', 'legal', 'travel', 'daily']));
   });
 
   it('ensures every sentence has non-empty en/vi/startTime and clozeWord appears in en', () => {

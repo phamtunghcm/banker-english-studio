@@ -102,7 +102,10 @@ export function CustomLessonModal({ onCreate, onClose }: CustomLessonModalProps)
             >
               <option value="finance">Tài chính (Finance)</option>
               <option value="credit">Tín dụng (Credit)</option>
-              <option value="tech">Công nghệ (Banking Tech)</option>
+              <option value="tech">Công nghệ thông tin & Fintech</option>
+              <option value="legal">Pháp chế & Tuân thủ (Legal)</option>
+              <option value="travel">Du lịch & Công tác (Travel)</option>
+              <option value="daily">Đời sống hàng ngày (Daily Life)</option>
             </select>
           </div>
         </div>
