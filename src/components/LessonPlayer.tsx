@@ -24,6 +24,10 @@ import {
   scoreWordAlignment,
 } from '../utils/wordScoring';
 import {
+  analyzePronunciation,
+  type PronunciationReport,
+} from '../utils/pronunciationCoach';
+import {
   CURATED_FEMALE_VOICES,
   isSpeechRecognitionSupported,
   speakSentence,
@@ -98,28 +102,38 @@ function WordScoreBadge({
 function SentenceSelector({
   sentences,
   activeIdx,
+  scoresById,
   onSelect,
 }: {
   sentences: LessonSentence[];
   activeIdx: number;
+  scoresById?: Record<string, number>;
   onSelect: (idx: number) => void;
 }) {
   return (
     <div className="flex flex-wrap gap-1.5">
-      {sentences.map((s, idx) => (
-        <button
-          key={s.id}
-          type="button"
-          onClick={() => onSelect(idx)}
-          className={`h-8 min-w-8 rounded-lg px-2 text-xs font-bold transition ${
-            idx === activeIdx
-              ? 'bg-emerald-600 text-white'
-              : 'border border-slate-300 bg-white text-slate-800 hover:bg-slate-100'
-          }`}
-        >
-          {idx + 1}
-        </button>
-      ))}
+      {sentences.map((s, idx) => {
+        const score = scoresById?.[s.id];
+        return (
+          <button
+            key={s.id}
+            type="button"
+            onClick={() => onSelect(idx)}
+            className={`inline-flex h-8 items-center gap-1 rounded-lg px-2.5 text-xs font-bold transition ${
+              idx === activeIdx
+                ? 'bg-emerald-600 text-white'
+                : score !== undefined && score >= 75
+                  ? 'border border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
+                  : score !== undefined
+                    ? 'border border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100'
+                    : 'border border-slate-300 bg-white text-slate-800 hover:bg-slate-100'
+            }`}
+          >
+            <span>{idx + 1}</span>
+            {score !== undefined && <span className="text-[10px] opacity-90">({score}%)</span>}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -150,12 +164,14 @@ export function LessonPlayer({
   const [noSub, setNoSub] = useState(false);
   const [showVi, setShowVi] = useState(true);
 
-  // Shadowing state
+  // Shadowing state (per-sentence full pronunciation reports + single-word fixer)
   const [isRecording, setIsRecording] = useState(false);
+  const [recordingFixWord, setRecordingFixWord] = useState<string | null>(null);
+  const [fixedWords, setFixedWords] = useState<Record<string, boolean>>({});
   const [spokenText, setSpokenText] = useState('');
   const [micError, setMicError] = useState<string | null>(null);
   const [shadowingResults, setShadowingResults] = useState<
-    Record<string, { words: WordScoreResult[]; accuracy: number }>
+    Record<string, PronunciationReport>
   >({});
 
   // Dictation state keyed by sentence.id
@@ -186,6 +202,7 @@ export function LessonPlayer({
     stopListening();
     setIsPlaying(false);
     setIsRecording(false);
+    setRecordingFixWord(null);
     setActiveWordIdx(null);
   };
 
@@ -241,10 +258,10 @@ export function LessonPlayer({
     );
   };
 
-  const handleSpeakSingleWord = (word: string) => {
+  const handleSpeakSingleWord = (word: string, slow = false) => {
     const clean = word.replace(/^[^\w]+|[^\w]+$/g, '');
     if (!clean) return;
-    speakSentence(clean, 0.85, {}, selectedVoicePreset, tonePreset);
+    speakSentence(clean, slow ? 0.72 : 0.85, {}, selectedVoicePreset, tonePreset);
   };
 
   const handleTogglePlay = () => {
@@ -258,10 +275,58 @@ export function LessonPlayer({
   };
 
   const handleScoreShadowing = (textToScore: string) => {
-    const res = scoreWordAlignment(currentSentence.en, textToScore);
-    setShadowingResults((prev) => ({ ...prev, [currentSentence.id]: res }));
-    onComplete({ shadowingScore: res.accuracy });
+    const report = analyzePronunciation(currentSentence.en, textToScore);
+    setShadowingResults((prev) => ({ ...prev, [currentSentence.id]: report }));
+    onComplete({ shadowingScore: report.accuracy });
   };
+
+  const handlePracticeSingleWord = (sentenceId: string, cleanWord: string) => {
+    const key = `${sentenceId}:${cleanWord.toLowerCase()}`;
+    if (recordingFixWord === key) {
+      stopListening();
+      setRecordingFixWord(null);
+      return;
+    }
+    stopSpeaking();
+    setIsPlaying(false);
+    setIsRecording(false);
+    setMicError(null);
+    let latest = '';
+
+    const started = startListening(
+      (transcript) => {
+        latest = transcript;
+      },
+      (err) => {
+        setMicError(err);
+        setRecordingFixWord(null);
+      },
+      () => {
+        setRecordingFixWord(null);
+        if (latest.trim()) {
+          const check = scoreWordAlignment(cleanWord, latest);
+          if (check.accuracy >= 80) {
+            setFixedWords((prev) => ({ ...prev, [key]: true }));
+          } else {
+            setMicError(`Từ "${cleanWord}": máy nghe "${latest.trim()}" — hãy nghe chậm 0.75x và thử lại nhé!`);
+          }
+        }
+      }
+    );
+    if (started) setRecordingFixWord(key);
+  };
+
+  const shadowingScoresById: Record<string, number> = {};
+  for (const [sid, rep] of Object.entries(shadowingResults)) {
+    shadowingScoresById[sid] = rep.accuracy;
+  }
+  const scoredCount = Object.keys(shadowingScoresById).length;
+  const lessonAvgScore =
+    scoredCount === 0
+      ? null
+      : Math.round(
+          Object.values(shadowingScoresById).reduce((a, b) => a + b, 0) / scoredCount
+        );
 
   const handleToggleMic = () => {
     if (isRecording) {
@@ -594,46 +659,65 @@ export function LessonPlayer({
                     </div>
                   </button>
 
-                  {s.keywords.length > 0 && (
-                    <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-200 pt-2.5 pl-12">
-                      <span className="text-[11px] font-bold text-slate-500">Thuật ngữ:</span>
-                      {s.keywords.map((kw) => {
-                        const isSaved = savedWords.some(
-                          (sw) => sw.toLowerCase() === kw.toLowerCase()
-                        );
-                        return (
-                          <div
-                            key={kw}
-                            className="inline-flex items-center rounded-md border border-slate-300 bg-slate-50"
-                          >
-                            <button
-                              type="button"
-                              onClick={() => handleSpeakSingleWord(kw)}
-                              className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-bold text-sky-800 hover:text-sky-950"
-                              title="Nghe phát âm thuật ngữ"
-                            >
-                              <Volume2 className="h-3 w-3" />
-                              {kw}
-                            </button>
-                            {onToggleSaveWord && (
-                              <button
-                                type="button"
-                                onClick={() => onToggleSaveWord(kw, s.en)}
-                                className={`border-l border-slate-300 px-1.5 py-0.5 text-xs ${
-                                  isSaved
-                                    ? 'text-amber-600'
-                                    : 'text-slate-500 hover:text-amber-600'
-                                }`}
-                                title={isSaved ? 'Đã lưu từ khó' : 'Lưu vào Kho từ khó'}
+                  <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 pt-2.5 pl-12">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {s.keywords.length > 0 && (
+                        <>
+                          <span className="text-[11px] font-bold text-slate-500">Thuật ngữ:</span>
+                          {s.keywords.map((kw) => {
+                            const isSaved = savedWords.some(
+                              (sw) => sw.toLowerCase() === kw.toLowerCase()
+                            );
+                            return (
+                              <div
+                                key={kw}
+                                className="inline-flex items-center rounded-md border border-slate-300 bg-slate-50"
                               >
-                                <Bookmark className="h-3 w-3" />
-                              </button>
-                            )}
-                          </div>
-                        );
-                      })}
+                                <button
+                                  type="button"
+                                  onClick={() => handleSpeakSingleWord(kw)}
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-bold text-sky-800 hover:text-sky-950"
+                                  title="Nghe phát âm thuật ngữ"
+                                >
+                                  <Volume2 className="h-3 w-3" />
+                                  {kw}
+                                </button>
+                                {onToggleSaveWord && (
+                                  <button
+                                    type="button"
+                                    onClick={() => onToggleSaveWord(kw, s.en)}
+                                    className={`border-l border-slate-300 px-1.5 py-0.5 text-xs ${
+                                      isSaved
+                                        ? 'text-amber-600'
+                                        : 'text-slate-500 hover:text-amber-600'
+                                    }`}
+                                    title={isSaved ? 'Đã lưu từ khó' : 'Lưu vào Kho từ khó'}
+                                  >
+                                    <Bookmark className="h-3 w-3" />
+                                  </button>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </>
+                      )}
                     </div>
-                  )}
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        stopAllAudioAndMic();
+                        setActiveSentenceIdx(idx);
+                        setActiveTab('shadowing');
+                      }}
+                      className="inline-flex items-center gap-1 rounded-lg border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-800 hover:bg-emerald-100"
+                    >
+                      <Mic className="h-3 w-3" />
+                      {shadowingScoresById[s.id] !== undefined
+                        ? `Đọc: ${shadowingScoresById[s.id]}% • Chấm lại`
+                        : 'Chấm đọc câu này'}
+                    </button>
+                  </div>
                 </div>
               );
             })
@@ -647,15 +731,21 @@ export function LessonPlayer({
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <h2 className="text-base font-bold text-slate-900">
-                Luyện nói Shadowing — Câu {activeSentenceIdx + 1}/{lesson.sentences.length}
+                Chấm điểm cách đọc — Câu {activeSentenceIdx + 1}/{lesson.sentences.length}
+                {lessonAvgScore !== null && (
+                  <span className="ml-2 rounded-full border border-emerald-300 bg-emerald-50 px-2.5 py-0.5 text-xs font-extrabold text-emerald-800">
+                    TB bài: {lessonAvgScore}% ({scoredCount}/{lesson.sentences.length} câu)
+                  </span>
+                )}
               </h2>
               <p className="text-xs font-medium text-slate-600">
-                Nghe mẫu rồi bấm Micro nói lại. Bấm trực tiếp vào từ Đỏ/Vàng để nghe máy đọc mẫu từ đó.
+                Nghe mẫu rồi bấm Micro đọc lại từng câu. Hệ thống chấm điểm cách đọc và chỉ rõ cách sửa từng chữ chưa chuẩn.
               </p>
             </div>
             <SentenceSelector
               sentences={lesson.sentences}
               activeIdx={activeSentenceIdx}
+              scoresById={shadowingScoresById}
               onSelect={handleSelectSentence}
             />
           </div>
@@ -724,24 +814,156 @@ export function LessonPlayer({
           </div>
 
           {currentShadowResult && (
-            <div className="space-y-3 rounded-xl border border-emerald-300 bg-emerald-50/40 p-4">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-bold text-slate-800">
-                  Kết quả chấm từng chữ (bấm vào từ để nghe mẫu):
-                </span>
-                <span className="text-xl font-extrabold text-emerald-700">
-                  {currentShadowResult.accuracy}%
-                </span>
+            <div className="space-y-4 rounded-xl border border-emerald-300 bg-emerald-50/40 p-4">
+              {/* 3 Per-Sentence Pronunciation Metrics */}
+              <div className="grid gap-2.5 sm:grid-cols-3">
+                <div className="rounded-lg border border-slate-200 bg-white p-3">
+                  <p className="text-[11px] font-bold uppercase text-slate-500">Điểm cách đọc</p>
+                  <p className="mt-1 text-2xl font-extrabold text-emerald-700">
+                    {currentShadowResult.accuracy}%
+                  </p>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-white p-3">
+                  <p className="text-[11px] font-bold uppercase text-slate-500">Từ đọc chuẩn</p>
+                  <p className="mt-1 text-2xl font-extrabold text-slate-900">
+                    {currentShadowResult.correctCount} / {currentShadowResult.totalWords}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-white p-3">
+                  <p className="text-[11px] font-bold uppercase text-slate-500">Đánh giá câu {activeSentenceIdx + 1}</p>
+                  <p className="mt-1 text-lg font-extrabold text-slate-900">
+                    {currentShadowResult.grade}
+                  </p>
+                </div>
               </div>
-              <div className="flex flex-wrap gap-2">
-                {currentShadowResult.words.map((w, i) => (
-                  <WordScoreBadge
-                    key={`sh-${currentSentence.id}-${i}`}
-                    item={w}
-                    onSpeakWord={handleSpeakSingleWord}
-                  />
-                ))}
+
+              <div>
+                <p className="mb-2 text-xs font-bold text-slate-700">
+                  Chi tiết từng chữ trong câu (bấm vào bất kỳ chữ nào để nghe mẫu):
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {currentShadowResult.words.map((w, i) => (
+                    <WordScoreBadge
+                      key={`sh-${currentSentence.id}-${i}`}
+                      item={w}
+                      onSpeakWord={(word) => handleSpeakSingleWord(word, false)}
+                    />
+                  ))}
+                </div>
               </div>
+
+              {/* Word-by-word correction coach */}
+              {currentShadowResult.issues.length > 0 ? (
+                <div className="space-y-2.5 border-t border-emerald-200 pt-3">
+                  <h3 className="text-sm font-extrabold text-rose-700">
+                    Sửa từng chữ chưa chuẩn ({currentShadowResult.issues.length} từ cần luyện lại):
+                  </h3>
+                  <div className="space-y-2">
+                    {currentShadowResult.issues.map((issue) => {
+                      const fixKey = `${currentSentence.id}:${issue.cleanWord.toLowerCase()}`;
+                      const isFixed = Boolean(fixedWords[fixKey]);
+                      const isRecThis = recordingFixWord === fixKey;
+                      const isSaved = savedWords.some(
+                        (sw) => sw.toLowerCase() === issue.cleanWord.toLowerCase()
+                      );
+
+                      return (
+                        <div
+                          key={`fix-${currentSentence.id}-${issue.index}`}
+                          className={`rounded-xl border p-3 ${
+                            isFixed
+                              ? 'border-emerald-300 bg-emerald-50'
+                              : 'border-slate-200 bg-white'
+                          }`}
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="text-sm font-extrabold text-slate-900">
+                                {issue.cleanWord}
+                              </span>
+                              <span className="rounded bg-slate-100 px-2 py-0.5 font-mono text-xs font-bold text-slate-700">
+                                {issue.syllables}
+                              </span>
+                              {isFixed ? (
+                                <span className="rounded-full bg-emerald-600 px-2 py-0.5 text-[11px] font-bold text-white">
+                                  ✓ Đã sửa chuẩn
+                                </span>
+                              ) : (
+                                <span
+                                  className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${
+                                    issue.status === 'near'
+                                      ? 'bg-amber-100 text-amber-900'
+                                      : 'bg-rose-100 text-rose-900'
+                                  }`}
+                                >
+                                  {issue.spoken
+                                    ? `Bạn đọc: "${issue.spoken}"`
+                                    : 'Thiếu / chưa rõ âm'}
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => handleSpeakSingleWord(issue.cleanWord, true)}
+                                className="inline-flex items-center gap-1 rounded-lg border border-sky-300 bg-sky-50 px-2.5 py-1 text-xs font-bold text-sky-900 hover:bg-sky-100"
+                              >
+                                <Volume2 className="h-3.5 w-3.5" />
+                                Nghe chậm 0.75x
+                              </button>
+
+                              {micSupported && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    handlePracticeSingleWord(currentSentence.id, issue.cleanWord)
+                                  }
+                                  className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-bold ${
+                                    isRecThis
+                                      ? 'animate-pulse bg-rose-600 text-white'
+                                      : 'bg-emerald-600 text-white hover:bg-emerald-700'
+                                  }`}
+                                >
+                                  {isRecThis ? (
+                                    <MicOff className="h-3.5 w-3.5" />
+                                  ) : (
+                                    <Mic className="h-3.5 w-3.5" />
+                                  )}
+                                  {isRecThis ? 'Đang nghe...' : 'Đọc lại chữ này'}
+                                </button>
+                              )}
+
+                              {onToggleSaveWord && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    onToggleSaveWord(issue.cleanWord, currentSentence.en)
+                                  }
+                                  className={`rounded-lg border px-2 py-1 text-xs font-bold ${
+                                    isSaved
+                                      ? 'border-amber-400 bg-amber-50 text-amber-800'
+                                      : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
+                                  }`}
+                                >
+                                  <Bookmark className="h-3.5 w-3.5" />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                          <p className="mt-1.5 text-xs font-medium text-slate-700">
+                            💡 {issue.tip}
+                          </p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-lg border border-emerald-300 bg-white p-3 text-xs font-bold text-emerald-800">
+                  ✓ Tuyệt vời! Bạn đã đọc chuẩn 100% tất cả các chữ trong câu này.
+                </div>
+              )}
             </div>
           )}
         </div>

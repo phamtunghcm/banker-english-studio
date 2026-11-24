@@ -89,7 +89,19 @@ describe('LessonPlayer', () => {
     fireEvent.change(fallbackInput, { target: { value: 'Our net interest margin expanded rapidly' } });
     fireEvent.click(screen.getByRole('button', { name: /Chấm điểm từng chữ/i }));
 
-    expect(screen.getByText(/100%/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/100%/i).length).toBeGreaterThanOrEqual(1);
     expect(onComplete).toHaveBeenCalledWith(expect.objectContaining({ shadowingScore: 100 }));
+  });
+
+  it('shows word-by-word correction coach when words are mispronounced or skipped', () => {
+    render(<LessonPlayer lesson={MOCK_LESSON} onComplete={vi.fn()} onBack={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /Shadowing/i }));
+    const fallbackInput = screen.getByPlaceholderText(/Nhập hoặc dán câu bạn vừa nói/i);
+    fireEvent.change(fallbackInput, { target: { value: 'Our net interest magin expanded' } });
+    fireEvent.click(screen.getByRole('button', { name: /Chấm điểm từng chữ/i }));
+
+    expect(screen.getAllByText(/Sửa từng chữ chưa chuẩn/i).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByRole('button', { name: /Nghe chậm 0\.75x/i }).length).toBeGreaterThanOrEqual(1);
   });
 });
