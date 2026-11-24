@@ -30,10 +30,13 @@ import {
 import {
   CURATED_FEMALE_VOICES,
   isSpeechRecognitionSupported,
+  isVoiceRecorderSupported,
   speakSentence,
   startListening,
+  startVoiceRecording,
   stopListening,
   stopSpeaking,
+  stopVoiceRecording,
   type TonePreset,
 } from '../utils/speechEngine';
 
@@ -164,8 +167,10 @@ export function LessonPlayer({
   const [noSub, setNoSub] = useState(false);
   const [showVi, setShowVi] = useState(true);
 
-  // Shadowing state (per-sentence full pronunciation reports + single-word fixer)
+  // Shadowing state (per-sentence full pronunciation reports + single-word fixer + Safari audio recorder)
   const [isRecording, setIsRecording] = useState(false);
+  const [isVoiceMemoRecording, setIsVoiceMemoRecording] = useState(false);
+  const [recordedAudioUrl, setRecordedAudioUrl] = useState<string | null>(null);
   const [recordingFixWord, setRecordingFixWord] = useState<string | null>(null);
   const [fixedWords, setFixedWords] = useState<Record<string, boolean>>({});
   const [spokenText, setSpokenText] = useState('');
@@ -186,6 +191,7 @@ export function LessonPlayer({
 
   const currentSentence = lesson.sentences[activeSentenceIdx] ?? lesson.sentences[0];
   const micSupported = isSpeechRecognitionSupported();
+  const voiceRecorderSupported = isVoiceRecorderSupported();
   const currentShadowResult = shadowingResults[currentSentence.id] ?? null;
   const currentDictInput = dictationInputs[currentSentence.id] ?? '';
   const currentDictResult = dictationResults[currentSentence.id] ?? null;
@@ -193,15 +199,18 @@ export function LessonPlayer({
   useEffect(() => {
     return () => {
       stopSpeaking();
-      stopListening();
+      stopListening(true);
+      stopVoiceRecording();
     };
   }, []);
 
   const stopAllAudioAndMic = () => {
     stopSpeaking();
-    stopListening();
+    stopListening(true);
+    stopVoiceRecording();
     setIsPlaying(false);
     setIsRecording(false);
+    setIsVoiceMemoRecording(false);
     setRecordingFixWord(null);
     setActiveWordIdx(null);
   };
@@ -330,13 +339,17 @@ export function LessonPlayer({
 
   const handleToggleMic = () => {
     if (isRecording) {
-      stopListening();
+      stopListening(false);
       setIsRecording(false);
-      handleScoreShadowing(spokenText);
+      if (spokenText.trim()) {
+        handleScoreShadowing(spokenText);
+      }
       return;
     }
 
     stopSpeaking();
+    stopVoiceRecording();
+    setIsVoiceMemoRecording(false);
     setIsPlaying(false);
     setMicError(null);
     setSpokenText('');
@@ -362,6 +375,31 @@ export function LessonPlayer({
     if (started) {
       setIsRecording(true);
     }
+  };
+
+  const handleToggleVoiceMemo = async () => {
+    if (isVoiceMemoRecording) {
+      stopVoiceRecording();
+      setIsVoiceMemoRecording(false);
+      return;
+    }
+    stopSpeaking();
+    stopListening(true);
+    setIsRecording(false);
+    setMicError(null);
+    const ok = await startVoiceRecording(
+      (url) => {
+        setRecordedAudioUrl((prev) => {
+          if (prev) URL.revokeObjectURL(prev);
+          return url;
+        });
+      },
+      (err) => {
+        setMicError(err);
+        setIsVoiceMemoRecording(false);
+      }
+    );
+    if (ok) setIsVoiceMemoRecording(true);
   };
 
   const handleCheckDictation = () => {
@@ -778,10 +816,32 @@ export function LessonPlayer({
                 }`}
               >
                 {isRecording ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-                {isRecording ? 'Dừng & Chấm điểm' : 'Bấm nói (Micro)'}
+                {isRecording ? 'Dừng & Chấm điểm' : 'Bấm nói chấm điểm (Micro)'}
+              </button>
+            )}
+
+            {voiceRecorderSupported && (
+              <button
+                type="button"
+                onClick={() => void handleToggleVoiceMemo()}
+                className={`inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-bold ${
+                  isVoiceMemoRecording
+                    ? 'animate-pulse border-rose-600 bg-rose-50 text-rose-800'
+                    : 'border-slate-300 bg-white text-slate-800 hover:bg-slate-100'
+                }`}
+              >
+                {isVoiceMemoRecording ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4 text-sky-600" />}
+                {isVoiceMemoRecording ? 'Dừng ghi âm' : 'Ghi âm nghe lại (Safari)'}
               </button>
             )}
           </div>
+
+          {recordedAudioUrl && (
+            <div className="flex flex-wrap items-center gap-3 rounded-xl border border-sky-200 bg-sky-50 px-4 py-2.5">
+              <span className="text-xs font-bold text-sky-900">Bản ghi âm của bạn:</span>
+              <audio controls src={recordedAudioUrl} className="h-8 flex-1" />
+            </div>
+          )}
 
           {micError && (
             <p className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">

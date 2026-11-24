@@ -83,6 +83,7 @@ interface SpeechRecognitionEventLike {
 
 interface SpeechRecognitionLike {
   lang: string;
+  continuous: boolean;
   interimResults: boolean;
   maxAlternatives: number;
   onresult: ((e: SpeechRecognitionEventLike) => void) | null;
@@ -90,6 +91,7 @@ interface SpeechRecognitionLike {
   onend: (() => void) | null;
   start: () => void;
   stop: () => void;
+  abort?: () => void;
 }
 
 type SpeechRecognitionCtor = new () => SpeechRecognitionLike;
@@ -291,14 +293,48 @@ export function isSpeechRecognitionSupported(): boolean {
   return getSpeechRecognitionCtor() !== null;
 }
 
-export function stopListening(): void {
+export function isSafariBrowser(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent;
+  return /Safari/i.test(ua) && !/Chrome|Chromium|Edg|CriOS|FxiOS/i.test(ua);
+}
+
+export function formatSpeechError(code?: string): string | null {
+  if (!code || code === 'aborted') return null;
+  switch (code) {
+    case 'not-allowed':
+      return 'Safari chưa được cấp quyền Micro. Hãy vào Cài đặt Safari cho trang web này → Cho phép Micro (và kiểm tra System Settings → Privacy & Security → Microphone → bật Safari).';
+    case 'service-not-allowed':
+      return 'Safari yêu cầu bật "Đọc chính tả (Dictation)" trong Cài đặt macOS/iOS (System Settings → Keyboard → Dictation). Hoặc bạn có thể dùng nút "Ghi âm nghe lại" / mở bằng Chrome để chấm tự động.';
+    case 'no-speech':
+      return 'Chưa thu được giọng nói — hãy bấm lại nút Micro và nói gần micro hơn.';
+    case 'audio-capture':
+      return 'Không tìm thấy Micro hoặc Micro đang được ứng dụng khác chiếm dụng.';
+    case 'network':
+      return 'Kết nối tới dịch vụ nhận diện giọng nói bị gián đoạn. Hãy thử lại hoặc dùng Chrome.';
+    default:
+      return `Lỗi micro (${code}). Nếu đang dùng Safari, hãy thử bật Dictation trong cài đặt hệ thống hoặc dùng Chrome.`;
+  }
+}
+
+export function stopListening(abort = false): void {
   if (activeRecognition) {
-    try {
-      activeRecognition.stop();
-    } catch {
-      // Ignore stop errors
-    }
+    const rec = activeRecognition;
     activeRecognition = null;
+    if (abort) {
+      rec.onresult = null;
+      rec.onerror = null;
+      rec.onend = null;
+    }
+    try {
+      if (abort && typeof rec.abort === 'function') {
+        rec.abort();
+      } else {
+        rec.stop();
+      }
+    } catch {
+      // Ignore stop/abort errors
+    }
   }
 }
 
@@ -309,41 +345,134 @@ export function startListening(
 ): boolean {
   const Ctor = getSpeechRecognitionCtor();
   if (!Ctor) {
-    onError('Trình duyệt hiện tại không hỗ trợ nhận diện micro trực tiếp.');
+    onError('Trình duyệt hiện tại không hỗ trợ nhận diện giọng nói trực tiếp.');
     return false;
   }
 
-  stopListening();
+  // Cleanly abort any stale session without firing old handlers into the new session
+  stopListening(true);
+
   try {
     const rec = new Ctor();
+    const safari = isSafariBrowser();
     rec.lang = 'en-US';
-    rec.interimResults = true;
+    rec.continuous = false;
+    // Safari works more reliably with interimResults=true only when guarded safely;
+    // keep true so user sees words live, and guard optional chaining on results.
+    rec.interimResults = !safari ? true : true;
     rec.maxAlternatives = 1;
 
     rec.onresult = (event) => {
       let full = '';
       let isFinal = false;
-      for (let i = 0; i < event.results.length; i++) {
-        full += event.results[i][0].transcript + ' ';
-        if (event.results[i].isFinal) isFinal = true;
+      const results = event?.results;
+      if (!results) return;
+      for (let i = 0; i < results.length; i++) {
+        const res = results[i];
+        const text = res?.[0]?.transcript;
+        if (text) full += `${text} `;
+        if (res?.isFinal) isFinal = true;
       }
-      onTranscript(full.trim(), isFinal);
+      const cleaned = full.trim();
+      if (cleaned) {
+        onTranscript(cleaned, isFinal);
+      }
     };
 
     rec.onerror = (err) => {
-      onError(err.error ? `Lỗi micro: ${err.error}` : 'Không thể truy cập micro.');
+      const msg = formatSpeechError(err?.error);
+      if (msg) onError(msg);
     };
 
     rec.onend = () => {
-      activeRecognition = null;
+      if (activeRecognition === rec) {
+        activeRecognition = null;
+      }
       onEnd();
     };
 
     activeRecognition = rec;
     rec.start();
     return true;
+  } catch (err) {
+    activeRecognition = null;
+    const detail = err instanceof Error ? err.message : '';
+    onError(
+      detail
+        ? `Không thể khởi động Micro trên trình duyệt này (${detail}).`
+        : 'Không thể khởi động Micro. Hãy kiểm tra quyền truy cập Micro của trình duyệt.'
+    );
+    return false;
+  }
+}
+
+// Safari-safe local voice recorder (audio/mp4 on Safari, audio/webm on Chrome) for self-playback
+let activeMediaRecorder: MediaRecorder | null = null;
+let activeMediaStream: MediaStream | null = null;
+
+export function isVoiceRecorderSupported(): boolean {
+  return (
+    typeof navigator !== 'undefined' &&
+    Boolean(navigator.mediaDevices?.getUserMedia) &&
+    typeof MediaRecorder !== 'undefined'
+  );
+}
+
+export function stopVoiceRecording(): void {
+  if (activeMediaRecorder && activeMediaRecorder.state !== 'inactive') {
+    try {
+      activeMediaRecorder.stop();
+    } catch {
+      // Ignore recorder stop errors
+    }
+  }
+  activeMediaRecorder = null;
+  if (activeMediaStream) {
+    activeMediaStream.getTracks().forEach((t) => t.stop());
+    activeMediaStream = null;
+  }
+}
+
+export async function startVoiceRecording(
+  onRecordedUrl: (blobUrl: string) => void,
+  onError: (msg: string) => void
+): Promise<boolean> {
+  if (!isVoiceRecorderSupported()) {
+    onError('Trình duyệt không hỗ trợ ghi âm MediaRecorder.');
+    return false;
+  }
+  stopVoiceRecording();
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    activeMediaStream = stream;
+
+    const candidateTypes = ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm'];
+    const mimeType = candidateTypes.find(
+      (t) => typeof MediaRecorder.isTypeSupported === 'function' && MediaRecorder.isTypeSupported(t)
+    );
+
+    const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+    const chunks: BlobPart[] = [];
+
+    recorder.ondataavailable = (e) => {
+      if (e.data && e.data.size > 0) chunks.push(e.data);
+    };
+
+    recorder.onstop = () => {
+      const blob = new Blob(chunks, { type: mimeType || 'audio/mp4' });
+      const url = URL.createObjectURL(blob);
+      onRecordedUrl(url);
+      if (activeMediaStream) {
+        activeMediaStream.getTracks().forEach((t) => t.stop());
+        activeMediaStream = null;
+      }
+    };
+
+    activeMediaRecorder = recorder;
+    recorder.start();
+    return true;
   } catch {
-    onError('Không thể khởi động micro.');
+    onError('Không thể truy cập Micro để ghi âm. Vui lòng cấp quyền Micro trong cài đặt Safari.');
     return false;
   }
 }
