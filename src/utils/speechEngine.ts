@@ -52,6 +52,15 @@ export const CURATED_FEMALE_VOICES: CuratedFemaleVoice[] = [
   },
 ];
 
+let defaultVoicePresetId = CURATED_FEMALE_VOICES[0].id;
+
+/** Sets the voice used everywhere (lessons, tests, games, onboarding) unless overridden. */
+export function setDefaultVoicePreset(id: string | undefined): void {
+  if (id && CURATED_FEMALE_VOICES.some((v) => v.id === id)) {
+    defaultVoicePresetId = id;
+  }
+}
+
 interface SpeechRecognitionAlternativeLike {
   transcript: string;
 }
@@ -169,7 +178,7 @@ export function speakSentence(
     return;
   }
 
-  const { voice, preset } = resolveCuratedVoice(voicePresetId);
+  const { voice, preset } = resolveCuratedVoice(voicePresetId ?? defaultVoicePresetId);
   const adjusted = applyToneAndPreset(rate, tone, preset);
   let boundarySeen = false;
   callbacks.onWordIndex?.(0);

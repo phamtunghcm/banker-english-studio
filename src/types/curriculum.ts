@@ -30,7 +30,10 @@ export interface UserProfileConfig {
   goal: LearningGoal;
   dailyMinutesTarget: 15 | 30 | 45;
   theme?: UiThemeId;
+  voicePreset?: string;
 }
+
+export type GameId = 'match' | 'listen' | 'scramble';
 
 export type RankTitle =
   | 'Analyst (B1)'
@@ -115,6 +118,8 @@ export interface UserProgress {
   weeklyTestScores: Record<number, WeeklyTestRecord>;
   savedWords?: SavedWord[];
   customLessons?: Lesson[];
+  gameXp?: number;
+  gameBest?: Partial<Record<GameId, number>>;
 }
 
 export interface MultiProfileStore {

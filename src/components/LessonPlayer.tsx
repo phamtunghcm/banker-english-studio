@@ -37,6 +37,8 @@ interface LessonPlayerProps {
   lesson: Lesson;
   savedWords?: string[];
   onToggleSaveWord?: (word: string, contextSentence: string) => void;
+  voicePreset?: string;
+  onChangeVoice?: (id: string) => void;
   onComplete: (result: {
     shadowingScore?: number;
     dictationScore?: number;
@@ -123,6 +125,8 @@ export function LessonPlayer({
   lesson,
   savedWords = [],
   onToggleSaveWord,
+  voicePreset,
+  onChangeVoice,
   onComplete,
   onBack,
 }: LessonPlayerProps) {
@@ -134,7 +138,7 @@ export function LessonPlayer({
   const [rate, setRate] = useState(1.0);
   const [fontScale, setFontScale] = useState<'normal' | 'large'>('normal');
   const [selectedVoicePreset, setSelectedVoicePreset] = useState<string>(
-    CURATED_FEMALE_VOICES[0].id
+    voicePreset ?? CURATED_FEMALE_VOICES[0].id
   );
   const [tonePreset, setTonePreset] = useState<TonePreset>('expressive');
 
@@ -456,8 +460,11 @@ export function LessonPlayer({
               <select
                 aria-label="Giọng nữ truyền cảm"
                 value={selectedVoicePreset}
-                onChange={(e) => setSelectedVoicePreset(e.target.value)}
-                className="max-w-64 truncate rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-800"
+                onChange={(e) => {
+                  setSelectedVoicePreset(e.target.value);
+                  onChangeVoice?.(e.target.value);
+                }}
+                className="max-w-80 rounded-full border border-slate-300 bg-white px-3 py-1.5 pr-7 text-xs font-bold text-slate-800"
               >
                 {CURATED_FEMALE_VOICES.map((v) => (
                   <option key={v.id} value={v.id}>

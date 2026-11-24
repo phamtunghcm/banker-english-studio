@@ -1,4 +1,5 @@
 import type {
+  GameId,
   Lesson,
   LessonRecord,
   LevelTier,
@@ -33,6 +34,7 @@ export function createDefaultProfileConfig(
     goal: overrides.goal ?? 'executive_meeting',
     dailyMinutesTarget: overrides.dailyMinutesTarget ?? 15,
     theme: overrides.theme ?? 'crisp-light',
+    voicePreset: overrides.voicePreset ?? 'female-warm-us',
   };
 }
 
@@ -52,6 +54,8 @@ export function createInitialProgress(
     weeklyTestScores: {},
     savedWords: [],
     customLessons: [],
+    gameXp: 0,
+    gameBest: {},
   };
 }
 
@@ -94,6 +98,8 @@ function normalizeProgress(raw: Partial<UserProgress>): UserProgress {
     },
     savedWords: Array.isArray(raw.savedWords) ? raw.savedWords : [],
     customLessons: Array.isArray(raw.customLessons) ? raw.customLessons : [],
+    gameXp: typeof raw.gameXp === 'number' ? raw.gameXp : 0,
+    gameBest: raw.gameBest && typeof raw.gameBest === 'object' ? raw.gameBest : {},
   };
 }
 
@@ -375,6 +381,27 @@ export function addCustomLesson(progress: UserProgress, lesson: Lesson): UserPro
   return {
     ...progress,
     customLessons: [lesson, ...current],
+  };
+}
+
+export function recordGameResult(
+  progress: UserProgress,
+  gameId: GameId,
+  score: number,
+  dateOverride?: string
+): UserProgress {
+  const today = dateOverride ?? getTodayIso();
+  const safeScore = Math.max(0, Math.round(score));
+  const best = progress.gameBest ?? {};
+  return {
+    ...progress,
+    streakDays: computeNextStreak(progress.lastActiveDate, progress.streakDays, today),
+    lastActiveDate: today,
+    gameXp: (progress.gameXp ?? 0) + safeScore,
+    gameBest: {
+      ...best,
+      [gameId]: Math.max(best[gameId] ?? 0, safeScore),
+    },
   };
 }
 

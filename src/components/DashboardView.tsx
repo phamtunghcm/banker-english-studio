@@ -9,12 +9,14 @@ import {
   Download,
   FilePlus2,
   Flame,
+  Gamepad2,
   Landmark,
   Palette,
   Plane,
   RotateCcw,
   Scale,
   ShieldCheck,
+  Sparkles,
   Trash2,
   Trophy,
   Upload,
@@ -23,7 +25,9 @@ import {
 } from 'lucide-react';
 import type { LearningGoal, Lesson, Track, UiThemeId, UserProgress } from '../types/curriculum';
 import { computeTrackStats, isLessonMastered } from '../utils/progressStore';
-import { speakSentence } from '../utils/speechEngine';
+import { CURATED_FEMALE_VOICES, speakSentence } from '../utils/speechEngine';
+import { buildPersonalRoadmap, getLessonsPerDay } from '../utils/roadmap';
+import { xpToLevel } from '../utils/games';
 import { UI_THEMES } from '../data/themes';
 
 interface DashboardViewProps {
@@ -32,9 +36,11 @@ interface DashboardViewProps {
   electiveLessons: Lesson[];
   onSelectLesson: (lesson: Lesson) => void;
   onStartWeeklyTest: (week: 1 | 2 | 3 | 4) => void;
+  onOpenGameArena: () => void;
   onOpenCustomModal: () => void;
   onOpenProfileModal: () => void;
   onChangeTheme: (theme: UiThemeId) => void;
+  onChangeVoice: (voiceId: string) => void;
   onRemoveSavedWord: (word: string) => void;
   onExportJson: () => void;
   onImportJson: (raw: string) => void;
@@ -73,9 +79,11 @@ export function DashboardView({
   electiveLessons,
   onSelectLesson,
   onStartWeeklyTest,
+  onOpenGameArena,
   onOpenCustomModal,
   onOpenProfileModal,
   onChangeTheme,
+  onChangeVoice,
   onRemoveSavedWord,
   onExportJson,
   onImportJson,
@@ -85,6 +93,15 @@ export function DashboardView({
   const [onlyMyTracks, setOnlyMyTracks] = useState(false);
   const [electiveFilter, setElectiveFilter] = useState<'all' | 'legal' | 'travel' | 'daily' | 'tech'>('all');
   const [importStatus, setImportStatus] = useState<string | null>(null);
+
+  const allPool = [...lessons, ...electiveLessons];
+  const personalRoadmap = buildPersonalRoadmap(progress, allPool);
+  const dailyTargetCount = getLessonsPerDay(progress.profile.dailyMinutesTarget);
+  const todayRecommendations = personalRoadmap
+    .filter((l) => !isLessonMastered(progress.completedLessons[l.id]))
+    .slice(0, Math.max(3, dailyTargetCount));
+  const gameLevel = xpToLevel(progress.gameXp ?? 0);
+  const activeVoice = progress.profile.voicePreset ?? CURATED_FEMALE_VOICES[0].id;
 
   const trackStats = computeTrackStats(progress, lessons);
   const completedCount = lessons.filter((l) =>
@@ -148,11 +165,27 @@ export function DashboardView({
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
+            onClick={onOpenGameArena}
+            className="inline-flex items-center gap-1.5 rounded-xl bg-amber-500 px-3.5 py-2 text-xs font-extrabold text-slate-950 shadow-sm hover:bg-amber-400"
+          >
+            <Gamepad2 className="h-4 w-4" />
+            Game Arena (Lv.{gameLevel.level} • {progress.gameXp ?? 0} XP)
+          </button>
+          <button
+            type="button"
+            onClick={onReopenOnboarding}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-600 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-900 hover:bg-emerald-100"
+          >
+            <RotateCcw className="h-3.5 w-3.5" />
+            Thiết lập Lộ trình & Test Năng lực
+          </button>
+          <button
+            type="button"
             onClick={onOpenProfileModal}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-600 bg-emerald-50 px-3.5 py-2 text-xs font-bold text-emerald-800 hover:bg-emerald-100"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-800 hover:bg-slate-100"
           >
             <UserCog className="h-3.5 w-3.5" />
-            Tài khoản & Tùy biến
+            Tài khoản
           </button>
           <button
             type="button"
@@ -164,23 +197,15 @@ export function DashboardView({
           </button>
           <button
             type="button"
-            onClick={onReopenOnboarding}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-800 hover:bg-slate-100"
-          >
-            <RotateCcw className="h-3.5 w-3.5" />
-            Đổi trình độ / Test lại
-          </button>
-          <button
-            type="button"
             onClick={onExportJson}
             className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-800 hover:bg-slate-100"
           >
             <Download className="h-3.5 w-3.5" />
-            Export JSON
+            Export
           </button>
           <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-800 hover:bg-slate-100">
             <Upload className="h-3.5 w-3.5" />
-            Import JSON
+            Import
             <input type="file" accept=".json" onChange={handleFileImport} className="hidden" />
           </label>
         </div>
@@ -192,33 +217,121 @@ export function DashboardView({
         </div>
       )}
 
-      {/* 5 UI Theme Options Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-        <span className="inline-flex items-center gap-2 text-xs font-bold text-slate-700">
-          <Palette className="h-4 w-4 text-emerald-600" />
-          Giao diện (5 tùy chọn):
-        </span>
-        <div className="flex flex-wrap gap-2">
-          {UI_THEMES.map((t) => {
-            const active = (progress.profile.theme ?? 'crisp-light') === t.id;
-            return (
-              <button
-                key={t.id}
-                type="button"
-                onClick={() => onChangeTheme(t.id)}
-                className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-bold transition ${
-                  active
-                    ? 'border-emerald-600 bg-emerald-50 text-emerald-900 ring-1 ring-emerald-600'
-                    : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
-                }`}
-              >
-                <span className={`h-3.5 w-3.5 rounded-full border ${t.swatchClass}`} />
-                {t.label}
-              </button>
-            );
-          })}
+      {/* 5 UI Theme Options + 5 Female Voices Bar */}
+      <div className="grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm lg:grid-cols-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-700">
+            <Palette className="h-4 w-4 text-emerald-600" />
+            Giao diện (5 tùy chọn):
+          </span>
+          <div className="flex flex-wrap gap-1.5">
+            {UI_THEMES.map((t) => {
+              const active = (progress.profile.theme ?? 'crisp-light') === t.id;
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => onChangeTheme(t.id)}
+                  className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-bold transition ${
+                    active
+                      ? 'border-emerald-600 bg-emerald-50 text-emerald-900 ring-1 ring-emerald-600'
+                      : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
+                  }`}
+                >
+                  <span className={`h-3 w-3 rounded-full border ${t.swatchClass}`} />
+                  {t.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+          <span className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-700">
+            <Volume2 className="h-4 w-4 text-emerald-600" />
+            Giọng nữ đọc (5 giọng):
+          </span>
+          <select
+            aria-label="Chọn giọng đọc toàn hệ thống"
+            value={activeVoice}
+            onChange={(e) => onChangeVoice(e.target.value)}
+            className="max-w-64 truncate rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-bold text-slate-900"
+          >
+            {CURATED_FEMALE_VOICES.map((v) => (
+              <option key={v.id} value={v.id}>
+                {v.label}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={() =>
+              speakSentence(
+                'Hello! Ready for your daily banking English session?',
+                1.0,
+                {},
+                activeVoice,
+                'expressive'
+              )
+            }
+            className="rounded-full border border-emerald-300 bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-800 hover:bg-emerald-100"
+          >
+            Thử giọng
+          </button>
         </div>
       </div>
+
+      {/* Personalized Daily Roadmap Recommendation */}
+      {todayRecommendations.length > 0 && (
+        <section className="space-y-3 rounded-2xl border border-emerald-200 bg-emerald-50/40 p-5 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h2 className="flex items-center gap-2 text-base font-extrabold text-slate-900">
+                <Sparkles className="h-4 w-4 text-emerald-600" />
+                Lộ trình đề xuất riêng cho {progress.profile.name} ({dailyTargetCount} bài/ngày • {progress.profile.dailyMinutesTarget} phút)
+              </h2>
+              <p className="text-xs font-medium text-slate-600">
+                Tự động sắp xếp theo lĩnh vực ({progress.profile.focusTracks.map((t) => TRACK_META[t].shortLabel).join(', ')}) và mục tiêu {GOAL_LABELS[progress.profile.goal]}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={onOpenGameArena}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-amber-400 bg-amber-100 px-3 py-1.5 text-xs font-extrabold text-amber-900 hover:bg-amber-200"
+            >
+              <Gamepad2 className="h-3.5 w-3.5" />
+              Chơi Game ôn bài ngay
+            </button>
+          </div>
+          <div className="grid gap-3 md:grid-cols-3">
+            {todayRecommendations.map((lesson, idx) => {
+              const meta = TRACK_META[lesson.track];
+              return (
+                <button
+                  key={`rec-${lesson.id}`}
+                  type="button"
+                  onClick={() => onSelectLesson(lesson)}
+                  className="flex flex-col justify-between rounded-xl border border-slate-200 bg-white p-3.5 text-left shadow-sm transition hover:border-emerald-500"
+                >
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-extrabold text-emerald-700">
+                        Ưu tiên #{idx + 1}
+                      </span>
+                      <span className="rounded bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-800">
+                        {meta.shortLabel}
+                      </span>
+                    </div>
+                    <p className="mt-1.5 text-sm font-bold text-slate-900">{lesson.title}</p>
+                    <p className="mt-0.5 text-xs font-medium text-slate-600">{lesson.scenario}</p>
+                  </div>
+                  <span className="mt-3 text-xs font-bold text-emerald-700">Bắt đầu học →</span>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      )}
 
       {/* KPI Cards */}
       <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
