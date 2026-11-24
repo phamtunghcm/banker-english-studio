@@ -28,6 +28,7 @@ import {
   startListening,
   stopListening,
   stopSpeaking,
+  type TonePreset,
   type VoiceOption,
 } from '../utils/speechEngine';
 
@@ -135,6 +136,7 @@ export function LessonPlayer({
   const [fontScale, setFontScale] = useState<'normal' | 'large'>('normal');
   const [voices, setVoices] = useState<VoiceOption[]>(() => getAvailableEnglishVoices());
   const [selectedVoiceURI, setSelectedVoiceURI] = useState<string>('');
+  const [tonePreset, setTonePreset] = useState<TonePreset>('expressive');
 
   // Sub / No-Sub toggles
   const [noSub, setNoSub] = useState(false);
@@ -229,14 +231,15 @@ export function LessonPlayer({
           setActiveWordIdx(null);
         },
       },
-      selectedVoiceURI || undefined
+      selectedVoiceURI || undefined,
+      tonePreset
     );
   };
 
   const handleSpeakSingleWord = (word: string) => {
     const clean = word.replace(/^[^\w]+|[^\w]+$/g, '');
     if (!clean) return;
-    speakSentence(clean, 0.85, {}, selectedVoiceURI || undefined);
+    speakSentence(clean, 0.85, {}, selectedVoiceURI || undefined, tonePreset);
   };
 
   const handleTogglePlay = () => {
@@ -442,20 +445,49 @@ export function LessonPlayer({
               <option value={1.25}>1.25x</option>
             </select>
 
+            <select
+              aria-label="Ngữ điệu"
+              value={tonePreset}
+              onChange={(e) => setTonePreset(e.target.value as TonePreset)}
+              className="rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-800"
+            >
+              <option value="expressive">Ngữ điệu: Truyền cảm</option>
+              <option value="executive">Ngữ điệu: Họp chuyên nghiệp</option>
+              <option value="coaching">Ngữ điệu: Chậm rõ từng âm</option>
+            </select>
+
             {voices.length > 0 && (
-              <select
-                aria-label="Giọng đọc"
-                value={selectedVoiceURI}
-                onChange={(e) => setSelectedVoiceURI(e.target.value)}
-                className="max-w-44 truncate rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-800"
-              >
-                <option value="">Giọng nữ ưu tiên</option>
-                {voices.map((v) => (
-                  <option key={v.voiceURI} value={v.voiceURI}>
-                    {v.name} ({v.lang})
-                  </option>
-                ))}
-              </select>
+              <div className="inline-flex items-center gap-1">
+                <select
+                  aria-label="Giọng đọc"
+                  value={selectedVoiceURI}
+                  onChange={(e) => setSelectedVoiceURI(e.target.value)}
+                  className="max-w-56 truncate rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-800"
+                >
+                  <option value="">Tự động: Giọng nữ truyền cảm nhất</option>
+                  {voices.map((v) => (
+                    <option key={v.voiceURI} value={v.voiceURI}>
+                      {v.displayLabel}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() =>
+                    speakSentence(
+                      'Hello, welcome to FinTech Banker English Studio.',
+                      rate,
+                      {},
+                      selectedVoiceURI || undefined,
+                      tonePreset
+                    )
+                  }
+                  className="rounded-full border border-emerald-300 bg-emerald-50 px-2.5 py-1.5 text-xs font-bold text-emerald-800 hover:bg-emerald-100"
+                  title="Nghe thử giọng đang chọn"
+                >
+                  Thử giọng
+                </button>
+              </div>
             )}
 
             <button

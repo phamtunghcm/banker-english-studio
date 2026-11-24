@@ -4,10 +4,14 @@ export interface SpeechCallbacks {
   onError?: () => void;
 }
 
+export type TonePreset = 'expressive' | 'executive' | 'coaching';
+
 export interface VoiceOption {
   voiceURI: string;
   name: string;
+  displayLabel: string;
   lang: string;
+  recommended: boolean;
 }
 
 interface SpeechRecognitionAlternativeLike {
@@ -74,46 +78,76 @@ if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
   };
 }
 
-const EXPRESSIVE_FEMALE_PRIORITY = [
-  'Ava (Premium)',
-  'Ava',
-  'Samantha (Enhanced)',
-  'Allison',
-  'Microsoft Aria',
-  'Google US English',
-  'Google UK English Female',
-  'Serena',
-  'Karen',
-  'Samantha',
-  'Victoria',
+// Filter out novelty/robotic macOS system voices
+const NOVELTY_VOICE_PATTERN =
+  /^(Albert|Bad News|Bahh|Bells|Boing|Bubbles|Cellos|Deranged|Eddy|Flo|Fred|Good News|Grandma|Grandpa|Hysterical|Jester|Junior|Kathy|Organ|Princess|Ralph|Reed|Rocko|Sandy|Shelley|Superstar|Trinoids|Whisper|Wobble|Zarvox)\b/i;
+
+const EXPRESSIVE_VOICES_META: { match: string; label: string }[] = [
+  { match: 'Ava (Premium)', label: '★ Ava Premium (Nữ Mỹ - Rất truyền cảm)' },
+  { match: 'Ava', label: '★ Ava (Nữ Mỹ - Truyền cảm)' },
+  { match: 'Samantha (Enhanced)', label: '★ Samantha Enhanced (Nữ Mỹ - Tự nhiên)' },
+  { match: 'Allison', label: '★ Allison (Nữ Mỹ - Ấm áp)' },
+  { match: 'Microsoft Aria', label: '★ Aria Natural (Nữ Mỹ - AI Tự nhiên)' },
+  { match: 'Microsoft Jenny', label: '★ Jenny Natural (Nữ Mỹ - Truyền cảm)' },
+  { match: 'Google US English', label: '★ Google US English (Nữ Mỹ - Rõ nét)' },
+  { match: 'Google UK English Female', label: '★ Google UK Female (Nữ Anh - Thanh lịch)' },
+  { match: 'Serena', label: '★ Serena (Nữ Anh - Sang trọng)' },
+  { match: 'Kate', label: '★ Kate (Nữ Anh - Chuẩn mực)' },
+  { match: 'Karen', label: '★ Karen (Nữ Úc - Dễ nghe)' },
+  { match: 'Moira', label: '★ Moira (Nữ Ireland - Nhẹ nhàng)' },
+  { match: 'Tessa', label: '★ Tessa (Nữ - Rõ chữ)' },
+  { match: 'Samantha', label: '★ Samantha (Nữ Mỹ - Phổ thông)' },
+  { match: 'Daniel', label: 'Daniel (Nam Anh - Trầm ấm)' },
+  { match: 'Google UK English Male', label: 'Google UK Male (Nam Anh - Lịch lãm)' },
 ];
 
 function scoreVoiceExpressiveness(voice: SpeechSynthesisVoice): number {
-  const idx = EXPRESSIVE_FEMALE_PRIORITY.findIndex((p) => voice.name.includes(p));
+  const idx = EXPRESSIVE_VOICES_META.findIndex((p) => voice.name.includes(p.match));
   if (idx !== -1) return 100 - idx;
-  if (/natural|neural|premium|enhanced/i.test(voice.name)) return 75;
+  if (/natural|neural|premium|enhanced|siri/i.test(voice.name)) return 75;
   if (/female|woman/i.test(voice.name)) return 60;
   if (voice.lang === 'en-US') return 40;
   return 20;
 }
 
+function formatVoiceLabel(voice: SpeechSynthesisVoice): { displayLabel: string; recommended: boolean } {
+  const matched = EXPRESSIVE_VOICES_META.find((p) => voice.name.includes(p.match));
+  if (matched) {
+    return { displayLabel: matched.label, recommended: true };
+  }
+  const isNatural = /natural|neural|premium|enhanced|siri/i.test(voice.name);
+  return {
+    displayLabel: `${isNatural ? '★ ' : ''}${voice.name} (${voice.lang})`,
+    recommended: isNatural,
+  };
+}
+
 export function getAvailableEnglishVoices(): VoiceOption[] {
-  const english = loadRawVoices().filter((v) => v.lang.startsWith('en'));
+  const english = loadRawVoices().filter(
+    (v) => v.lang.startsWith('en') && !NOVELTY_VOICE_PATTERN.test(v.name)
+  );
   const sorted = [...english].sort(
     (a, b) => scoreVoiceExpressiveness(b) - scoreVoiceExpressiveness(a)
   );
-  return sorted.map((v) => ({
-    voiceURI: v.voiceURI,
-    name: v.name,
-    lang: v.lang,
-  }));
+  return sorted.map((v) => {
+    const { displayLabel, recommended } = formatVoiceLabel(v);
+    return {
+      voiceURI: v.voiceURI,
+      name: v.name,
+      displayLabel,
+      lang: v.lang,
+      recommended,
+    };
+  });
 }
 
 function selectPreferredEnglishVoice(
   voices: SpeechSynthesisVoice[],
   preferredURI?: string
 ): SpeechSynthesisVoice | null {
-  const english = voices.filter((v) => v.lang.startsWith('en'));
+  const english = voices.filter(
+    (v) => v.lang.startsWith('en') && !NOVELTY_VOICE_PATTERN.test(v.name)
+  );
   if (english.length === 0) return null;
   if (preferredURI) {
     const exact = english.find((v) => v.voiceURI === preferredURI);
@@ -124,11 +158,22 @@ function selectPreferredEnglishVoice(
   )[0];
 }
 
+function applyTonePreset(baseRate: number, tone: TonePreset): { rate: number; pitch: number } {
+  if (tone === 'expressive') {
+    return { rate: Math.max(0.65, baseRate * 0.96), pitch: 1.05 };
+  }
+  if (tone === 'coaching') {
+    return { rate: Math.max(0.65, baseRate * 0.85), pitch: 1.02 };
+  }
+  return { rate: baseRate, pitch: 1.0 };
+}
+
 export function speakSentence(
   text: string,
   rate = 1.0,
   callbacks: SpeechCallbacks = {},
-  voiceURI?: string
+  voiceURI?: string,
+  tone: TonePreset = 'expressive'
 ): void {
   stopSpeaking();
   const words = text.trim().split(/\s+/).filter(Boolean);
@@ -137,14 +182,14 @@ export function speakSentence(
     return;
   }
 
+  const adjusted = applyTonePreset(rate, tone);
   let boundarySeen = false;
   callbacks.onWordIndex?.(0);
 
-  // Length-aware fallback timer so short & long banking terms stay in sync
   const scheduleFallbackWord = (idx: number) => {
     if (boundarySeen || idx >= words.length) return;
     callbacks.onWordIndex?.(idx);
-    const wordDuration = Math.max(170, Math.round((130 + words[idx].length * 36) / rate));
+    const wordDuration = Math.max(170, Math.round((130 + words[idx].length * 36) / adjusted.rate));
     activeTimer = setTimeout(() => {
       scheduleFallbackWord(idx + 1);
     }, wordDuration);
@@ -153,7 +198,7 @@ export function speakSentence(
 
   if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
     const totalMs = words.reduce(
-      (sum, w) => sum + Math.max(170, Math.round((130 + w.length * 36) / rate)),
+      (sum, w) => sum + Math.max(170, Math.round((130 + w.length * 36) / adjusted.rate)),
       0
     );
     activeTimer = setTimeout(() => {
@@ -166,8 +211,8 @@ export function speakSentence(
   try {
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = 'en-US';
-    utterance.rate = rate;
-    utterance.pitch = 1.03; // Warm, expressive female intonation
+    utterance.rate = adjusted.rate;
+    utterance.pitch = adjusted.pitch;
     const voice = selectPreferredEnglishVoice(loadRawVoices(), voiceURI);
     if (voice) utterance.voice = voice;
 
