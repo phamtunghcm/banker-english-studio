@@ -5,6 +5,7 @@ import {
   Captions,
   CheckCircle2,
   EyeOff,
+  Gamepad2,
   Keyboard,
   Languages,
   Mic,
@@ -15,7 +16,8 @@ import {
   SquarePen,
   Volume2,
 } from 'lucide-react';
-import type { Lesson, LessonSentence, WordScoreResult } from '../types/curriculum';
+import type { GameId, Lesson, LessonSentence, WordScoreResult } from '../types/curriculum';
+import { LessonMiniGames } from './LessonMiniGames';
 import {
   checkClozeAnswer,
   scoreDictation,
@@ -31,7 +33,7 @@ import {
   type TonePreset,
 } from '../utils/speechEngine';
 
-type PlayerTab = 'subtitles' | 'shadowing' | 'dictation' | 'cloze';
+type PlayerTab = 'subtitles' | 'shadowing' | 'dictation' | 'cloze' | 'game';
 
 interface LessonPlayerProps {
   lesson: Lesson;
@@ -39,6 +41,7 @@ interface LessonPlayerProps {
   onToggleSaveWord?: (word: string, contextSentence: string) => void;
   voicePreset?: string;
   onChangeVoice?: (id: string) => void;
+  onFinishGame?: (gameId: GameId, score: number) => void;
   onComplete: (result: {
     shadowingScore?: number;
     dictationScore?: number;
@@ -127,6 +130,7 @@ export function LessonPlayer({
   onToggleSaveWord,
   voicePreset,
   onChangeVoice,
+  onFinishGame,
   onComplete,
   onBack,
 }: LessonPlayerProps) {
@@ -232,7 +236,8 @@ export function LessonPlayer({
         },
       },
       selectedVoicePreset,
-      tonePreset
+      tonePreset,
+      lesson.isCustom ? undefined : sentence.id
     );
   };
 
@@ -476,11 +481,12 @@ export function LessonPlayer({
                 type="button"
                 onClick={() =>
                   speakSentence(
-                    'Hello, welcome to FinTech Banker English Studio.',
+                    'Hello! Welcome to FinTech Banker English Studio. Let us practice speaking naturally today.',
                     rate,
                     {},
                     selectedVoicePreset,
-                    tonePreset
+                    tonePreset,
+                    'preview'
                   )
                 }
                 className="rounded-full border border-emerald-300 bg-emerald-50 px-2.5 py-1.5 text-xs font-bold text-emerald-800 hover:bg-emerald-100"
@@ -501,13 +507,14 @@ export function LessonPlayer({
           </div>
         </div>
 
-        {/* 4 Practice Tabs */}
-        <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {/* 5 Practice Tabs (including integrated Mini-Game) */}
+        <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-5">
           {[
             { id: 'subtitles', label: 'Phụ đề', icon: Captions },
             { id: 'shadowing', label: 'Shadowing', icon: Mic },
             { id: 'dictation', label: 'Chính tả', icon: Keyboard },
             { id: 'cloze', label: 'Điền từ', icon: SquarePen },
+            { id: 'game', label: 'Mini-Game', icon: Gamepad2 },
           ].map((tab) => {
             const Icon = tab.icon;
             const active = activeTab === tab.id;
@@ -880,6 +887,16 @@ export function LessonPlayer({
             </button>
           </div>
         </div>
+      )}
+
+      {/* Tab 5: Mini-Game lồng ghép trong bài học */}
+      {activeTab === 'game' && (
+        <LessonMiniGames
+          lesson={lesson}
+          voicePreset={selectedVoicePreset}
+          tonePreset={tonePreset}
+          onFinishGame={onFinishGame}
+        />
       )}
     </div>
   );

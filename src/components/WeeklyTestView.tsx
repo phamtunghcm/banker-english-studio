@@ -155,7 +155,9 @@ export function WeeklyTestView({
           </h2>
           <button
             type="button"
-            onClick={() => speakSentence(targetSentence.en, 1.0)}
+            onClick={() =>
+              speakSentence(targetSentence.en, 1.0, {}, undefined, 'expressive', targetSentence.id)
+            }
             className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-800"
           >
             <Volume2 className="h-3.5 w-3.5" />

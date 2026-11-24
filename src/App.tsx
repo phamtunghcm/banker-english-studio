@@ -24,20 +24,17 @@ import {
   updateProfileInStore,
 } from './utils/progressStore';
 import { setDefaultVoicePreset } from './utils/speechEngine';
-import { buildPersonalRoadmap } from './utils/roadmap';
 import { OnboardingModal } from './components/OnboardingModal';
 import { DashboardView } from './components/DashboardView';
 import { LessonPlayer } from './components/LessonPlayer';
 import { WeeklyTestView } from './components/WeeklyTestView';
 import { CustomLessonModal } from './components/CustomLessonModal';
 import { ProfileManagerModal } from './components/ProfileManagerModal';
-import { GameArenaView } from './components/GameArenaView';
 
 export function App() {
   const [store, setStore] = useState<MultiProfileStore>(() => loadMultiProfileStore());
   const [activeLesson, setActiveLesson] = useState<Lesson | null>(null);
   const [activeTestWeek, setActiveTestWeek] = useState<1 | 2 | 3 | 4 | null>(null);
-  const [showGameArena, setShowGameArena] = useState(false);
   const [forceOnboarding, setForceOnboarding] = useState(false);
   const [showCustomModal, setShowCustomModal] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
@@ -124,7 +121,6 @@ export function App() {
   const listeningLessonForTest = activeWeeklyTest
     ? ALL_LESSONS.find((l) => l.id === activeWeeklyTest.listeningLessonId) ?? ALL_LESSONS[0]
     : null;
-  const personalizedLessons = buildPersonalRoadmap(progress, ALL_LESSONS);
 
   return (
     <main
@@ -147,6 +143,9 @@ export function App() {
               updateProfileInStore(prev, prev.activeProfileId, { voicePreset })
             )
           }
+          onFinishGame={(gameId, score) =>
+            updateActiveProgress((prev) => recordGameResult(prev, gameId, score))
+          }
           onToggleSaveWord={(word, ctx) =>
             updateActiveProgress((prev) => toggleSavedWord(prev, word, ctx, activeLesson.id))
           }
@@ -160,17 +159,6 @@ export function App() {
             );
           }}
           onBack={() => setActiveLesson(null)}
-        />
-      ) : showGameArena ? (
-        <GameArenaView
-          lessons={personalizedLessons.slice(0, 12)}
-          gameXp={progress.gameXp ?? 0}
-          gameBest={progress.gameBest ?? {}}
-          voicePreset={progress.profile.voicePreset}
-          onFinishGame={(gameId, score) =>
-            updateActiveProgress((prev) => recordGameResult(prev, gameId, score))
-          }
-          onBack={() => setShowGameArena(false)}
         />
       ) : activeWeeklyTest && listeningLessonForTest ? (
         <WeeklyTestView
@@ -190,7 +178,6 @@ export function App() {
           electiveLessons={ELECTIVE_LESSONS}
           onSelectLesson={(lesson) => setActiveLesson(lesson)}
           onStartWeeklyTest={(week) => setActiveTestWeek(week)}
-          onOpenGameArena={() => setShowGameArena(true)}
           onOpenCustomModal={() => setShowCustomModal(true)}
           onOpenProfileModal={() => setShowProfileModal(true)}
           onChangeTheme={(theme) =>
@@ -230,7 +217,6 @@ export function App() {
           onSwitchProfile={(id) => {
             setActiveLesson(null);
             setActiveTestWeek(null);
-            setShowGameArena(false);
             setStore((prev) => switchProfileInStore(prev, id));
           }}
           onCreateProfile={(config, level) => {

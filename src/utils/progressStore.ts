@@ -34,7 +34,7 @@ export function createDefaultProfileConfig(
     goal: overrides.goal ?? 'executive_meeting',
     dailyMinutesTarget: overrides.dailyMinutesTarget ?? 15,
     theme: overrides.theme ?? 'crisp-light',
-    voicePreset: overrides.voicePreset ?? 'female-warm-us',
+    voicePreset: overrides.voicePreset ?? 'ava',
   };
 }
 

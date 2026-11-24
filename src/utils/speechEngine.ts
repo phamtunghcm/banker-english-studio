@@ -7,58 +7,65 @@ export interface SpeechCallbacks {
 export type TonePreset = 'expressive' | 'executive' | 'coaching';
 
 export interface CuratedFemaleVoice {
-  id: string;
+  id: 'ava' | 'emma' | 'jenny' | 'sonia' | 'natasha';
   label: string;
-  preferredNames: string[];
-  pitchBoost: number;
-  rateFactor: number;
+  neuralName: string;
+  lang: string;
 }
 
 export const CURATED_FEMALE_VOICES: CuratedFemaleVoice[] = [
   {
-    id: 'female-warm-us',
-    label: '1. Ava / Allison — Nữ Mỹ Ấm áp & Tự nhiên',
-    preferredNames: ['Ava (Premium)', 'Ava', 'Allison', 'Microsoft Aria', 'Google US English', 'Samantha'],
-    pitchBoost: 1.04,
-    rateFactor: 0.95,
+    id: 'ava',
+    label: '1. Ava — Nữ Mỹ Ấm áp & Tự nhiên',
+    neuralName: 'en-US-AvaNeural',
+    lang: 'en-US',
   },
   {
-    id: 'female-exec-us',
-    label: '2. Samantha — Nữ Mỹ Thanh lịch (Executive)',
-    preferredNames: ['Samantha (Enhanced)', 'Samantha', 'Microsoft Jenny', 'Victoria', 'Google US English'],
-    pitchBoost: 1.01,
-    rateFactor: 0.98,
+    id: 'emma',
+    label: '2. Emma — Nữ Mỹ Trẻ trung & Truyền cảm',
+    neuralName: 'en-US-EmmaNeural',
+    lang: 'en-US',
   },
   {
-    id: 'female-soft-au',
-    label: '3. Karen — Nữ Úc Dịu dàng & Dễ nghe',
-    preferredNames: ['Karen', 'Catherine', 'Samantha'],
-    pitchBoost: 1.03,
-    rateFactor: 0.95,
+    id: 'jenny',
+    label: '3. Jenny — Nữ Mỹ Chuyên nghiệp (Executive)',
+    neuralName: 'en-US-JennyNeural',
+    lang: 'en-US',
   },
   {
-    id: 'female-uk-classy',
-    label: '4. Serena / Kate — Nữ Anh Quốc Sang trọng',
-    preferredNames: ['Serena', 'Kate', 'Google UK English Female', 'Martha', 'Moira'],
-    pitchBoost: 1.02,
-    rateFactor: 0.97,
+    id: 'sonia',
+    label: '4. Sonia — Nữ Anh Quốc Thanh lịch',
+    neuralName: 'en-GB-SoniaNeural',
+    lang: 'en-GB',
   },
   {
-    id: 'female-gentle-ie',
-    label: '5. Moira / Tessa — Nữ Nhẹ nhàng & Rõ âm',
-    preferredNames: ['Moira', 'Tessa', 'Karen'],
-    pitchBoost: 1.05,
-    rateFactor: 0.93,
+    id: 'natasha',
+    label: '5. Natasha — Nữ Úc Dịu dàng & Dễ nghe',
+    neuralName: 'en-AU-NatashaNeural',
+    lang: 'en-AU',
   },
 ];
 
-let defaultVoicePresetId = CURATED_FEMALE_VOICES[0].id;
+const LEGACY_VOICE_MAP: Record<string, CuratedFemaleVoice['id']> = {
+  'female-warm-us': 'ava',
+  'female-exec-us': 'jenny',
+  'female-soft-au': 'natasha',
+  'female-uk-classy': 'sonia',
+  'female-gentle-ie': 'emma',
+};
 
-/** Sets the voice used everywhere (lessons, tests, games, onboarding) unless overridden. */
-export function setDefaultVoicePreset(id: string | undefined): void {
-  if (id && CURATED_FEMALE_VOICES.some((v) => v.id === id)) {
-    defaultVoicePresetId = id;
+export function normalizeVoiceId(id?: string): CuratedFemaleVoice['id'] {
+  if (!id) return 'ava';
+  if (CURATED_FEMALE_VOICES.some((v) => v.id === id)) {
+    return id as CuratedFemaleVoice['id'];
   }
+  return LEGACY_VOICE_MAP[id] ?? 'ava';
+}
+
+let defaultVoicePresetId: CuratedFemaleVoice['id'] = 'ava';
+
+export function setDefaultVoicePreset(id: string | undefined): void {
+  defaultVoicePresetId = normalizeVoiceId(id);
 }
 
 interface SpeechRecognitionAlternativeLike {
@@ -88,8 +95,8 @@ interface SpeechRecognitionLike {
 type SpeechRecognitionCtor = new () => SpeechRecognitionLike;
 
 let activeTimer: ReturnType<typeof setTimeout> | null = null;
+let activeAudio: HTMLAudioElement | null = null;
 let activeRecognition: SpeechRecognitionLike | null = null;
-let cachedVoices: SpeechSynthesisVoice[] = [];
 
 function clearWordTimer() {
   if (activeTimer !== null) {
@@ -100,6 +107,18 @@ function clearWordTimer() {
 
 export function stopSpeaking(): void {
   clearWordTimer();
+  if (activeAudio) {
+    try {
+      activeAudio.pause();
+      activeAudio.currentTime = 0;
+      activeAudio.ontimeupdate = null;
+      activeAudio.onended = null;
+      activeAudio.onerror = null;
+    } catch {
+      // Ignore audio cleanup errors
+    }
+    activeAudio = null;
+  }
   if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
     try {
       window.speechSynthesis.cancel();
@@ -109,84 +128,36 @@ export function stopSpeaking(): void {
   }
 }
 
-function loadRawVoices(): SpeechSynthesisVoice[] {
-  if (typeof window === 'undefined' || !('speechSynthesis' in window)) return [];
-  const list = window.speechSynthesis.getVoices?.() ?? [];
-  if (list.length > 0) {
-    cachedVoices = list;
-  }
-  return cachedVoices;
+function computeToneRate(baseRate: number, tone: TonePreset): number {
+  const factor = tone === 'coaching' ? 0.85 : tone === 'expressive' ? 0.96 : 1.0;
+  return Math.max(0.65, Math.min(1.4, baseRate * factor));
 }
 
-if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-  loadRawVoices();
-  window.speechSynthesis.onvoiceschanged = () => {
-    loadRawVoices();
-  };
+function buildWordThresholds(words: string[]): number[] {
+  const weights = words.map((w) => Math.max(2, w.length + 1));
+  const total = weights.reduce((a, b) => a + b, 0);
+  let acc = 0;
+  return weights.map((w) => {
+    const start = acc / total;
+    acc += w;
+    return start;
+  });
 }
 
-// Exclude male & robotic/novelty macOS voices so only natural female voices are used
-const EXCLUDED_VOICE_PATTERN =
-  /^(Albert|Arthur|Aaron|Bad News|Bahh|Bells|Boing|Bubbles|Cellos|Daniel|Deranged|Eddy|Flo|Fred|Good News|Gordon|Grandma|Grandpa|Hysterical|Jester|Junior|Kathy|Martin|Oliver|Organ|Princess|Ralph|Reed|Rishi|Rocko|Sandy|Shelley|Superstar|Trinoids|Whisper|Wobble|Zarvox)\b|Male/i;
-
-function getEnglishFemaleVoices(): SpeechSynthesisVoice[] {
-  const allEnglish = loadRawVoices().filter((v) => v.lang.startsWith('en'));
-  const femaleOnly = allEnglish.filter((v) => !EXCLUDED_VOICE_PATTERN.test(v.name));
-  return femaleOnly.length > 0 ? femaleOnly : allEnglish;
-}
-
-function resolveCuratedVoice(presetId?: string): {
-  voice: SpeechSynthesisVoice | null;
-  preset: CuratedFemaleVoice;
-} {
-  const preset =
-    CURATED_FEMALE_VOICES.find((p) => p.id === presetId) ?? CURATED_FEMALE_VOICES[0];
-  const pool = getEnglishFemaleVoices();
-  if (pool.length === 0) return { voice: null, preset };
-
-  for (const preferred of preset.preferredNames) {
-    const match = pool.find((v) => v.name.includes(preferred));
-    if (match) return { voice: match, preset };
-  }
-  return { voice: pool[0], preset };
-}
-
-function applyToneAndPreset(
-  baseRate: number,
-  tone: TonePreset,
-  preset: CuratedFemaleVoice
-): { rate: number; pitch: number } {
-  const toneRate = tone === 'expressive' ? 0.97 : tone === 'coaching' ? 0.85 : 1.0;
-  const tonePitch = tone === 'expressive' ? 1.02 : tone === 'coaching' ? 1.01 : 0.99;
-  return {
-    rate: Math.max(0.65, Math.min(1.4, baseRate * preset.rateFactor * toneRate)),
-    pitch: Math.max(0.9, Math.min(1.15, preset.pitchBoost * tonePitch)),
-  };
-}
-
-export function speakSentence(
+function speakWithBrowserFallback(
   text: string,
-  rate = 1.0,
-  callbacks: SpeechCallbacks = {},
-  voicePresetId?: string,
-  tone: TonePreset = 'expressive'
+  adjustedRate: number,
+  voiceInfo: CuratedFemaleVoice,
+  callbacks: SpeechCallbacks
 ): void {
-  stopSpeaking();
   const words = text.trim().split(/\s+/).filter(Boolean);
-  if (words.length === 0) {
-    callbacks.onEnd?.();
-    return;
-  }
-
-  const { voice, preset } = resolveCuratedVoice(voicePresetId ?? defaultVoicePresetId);
-  const adjusted = applyToneAndPreset(rate, tone, preset);
   let boundarySeen = false;
   callbacks.onWordIndex?.(0);
 
   const scheduleFallbackWord = (idx: number) => {
     if (boundarySeen || idx >= words.length) return;
     callbacks.onWordIndex?.(idx);
-    const wordDuration = Math.max(170, Math.round((130 + words[idx].length * 36) / adjusted.rate));
+    const wordDuration = Math.max(170, Math.round((130 + words[idx].length * 36) / adjustedRate));
     activeTimer = setTimeout(() => {
       scheduleFallbackWord(idx + 1);
     }, wordDuration);
@@ -195,7 +166,7 @@ export function speakSentence(
 
   if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
     const totalMs = words.reduce(
-      (sum, w) => sum + Math.max(170, Math.round((130 + w.length * 36) / adjusted.rate)),
+      (sum, w) => sum + Math.max(170, Math.round((130 + w.length * 36) / adjustedRate)),
       0
     );
     activeTimer = setTimeout(() => {
@@ -207,10 +178,9 @@ export function speakSentence(
 
   try {
     const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = voice?.lang ?? 'en-US';
-    utterance.rate = adjusted.rate;
-    utterance.pitch = adjusted.pitch;
-    if (voice) utterance.voice = voice;
+    utterance.lang = voiceInfo.lang;
+    utterance.rate = adjustedRate;
+    utterance.pitch = 1.02;
 
     utterance.onboundary = (event: SpeechSynthesisEvent) => {
       if (typeof event.charIndex === 'number') {
@@ -237,6 +207,75 @@ export function speakSentence(
     clearWordTimer();
     callbacks.onError?.();
   }
+}
+
+/**
+ * Plays pre-rendered Microsoft Neural TTS MP3 when audioId is provided (true expressive human-like female voice),
+ * falling back cleanly to Web Speech Synthesis only for custom user-pasted text or single-word lookups.
+ */
+export function speakSentence(
+  text: string,
+  rate = 1.0,
+  callbacks: SpeechCallbacks = {},
+  voicePresetId?: string,
+  tone: TonePreset = 'expressive',
+  audioId?: string
+): void {
+  stopSpeaking();
+  const words = text.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) {
+    callbacks.onEnd?.();
+    return;
+  }
+
+  const voiceId = normalizeVoiceId(voicePresetId ?? defaultVoicePresetId);
+  const voiceInfo =
+    CURATED_FEMALE_VOICES.find((v) => v.id === voiceId) ?? CURATED_FEMALE_VOICES[0];
+  const adjustedRate = computeToneRate(rate, tone);
+
+  if (audioId && typeof window !== 'undefined' && typeof Audio !== 'undefined') {
+    const src = `./audio/${voiceId}/${audioId}.mp3`;
+    const audio = new Audio(src);
+    audio.playbackRate = adjustedRate;
+    if ('preservesPitch' in audio) {
+      (audio as HTMLAudioElement & { preservesPitch: boolean }).preservesPitch = true;
+    }
+
+    const thresholds = buildWordThresholds(words);
+    activeAudio = audio;
+    callbacks.onWordIndex?.(0);
+
+    audio.ontimeupdate = () => {
+      if (!audio.duration || !Number.isFinite(audio.duration)) return;
+      const ratio = audio.currentTime / audio.duration;
+      let idx = 0;
+      for (let i = 0; i < thresholds.length; i++) {
+        if (ratio >= thresholds[i]) idx = i;
+      }
+      callbacks.onWordIndex?.(idx);
+    };
+
+    audio.onended = () => {
+      activeAudio = null;
+      callbacks.onEnd?.();
+    };
+
+    audio.onerror = () => {
+      activeAudio = null;
+      speakWithBrowserFallback(text, adjustedRate, voiceInfo, callbacks);
+    };
+
+    const playPromise = audio.play();
+    if (playPromise && typeof playPromise.catch === 'function') {
+      playPromise.catch(() => {
+        activeAudio = null;
+        speakWithBrowserFallback(text, adjustedRate, voiceInfo, callbacks);
+      });
+    }
+    return;
+  }
+
+  speakWithBrowserFallback(text, adjustedRate, voiceInfo, callbacks);
 }
 
 function getSpeechRecognitionCtor(): SpeechRecognitionCtor | null {

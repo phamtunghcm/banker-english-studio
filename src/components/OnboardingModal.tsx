@@ -277,11 +277,12 @@ export function OnboardingModal({
                   type="button"
                   onClick={() =>
                     speakSentence(
-                      'Welcome to FinTech Banker English Studio. Let us build your roadmap.',
+                      'Hello! Welcome to FinTech Banker English Studio. Let us practice speaking naturally today.',
                       1.0,
                       {},
                       voicePreset,
-                      'expressive'
+                      'expressive',
+                      'preview'
                     )
                   }
                   className="inline-flex shrink-0 items-center gap-1 rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-800 hover:bg-emerald-100"
@@ -368,7 +369,7 @@ export function OnboardingModal({
                       <button
                         type="button"
                         onClick={() =>
-                          speakSentence(q.audioText!, 1.0, {}, voicePreset, 'expressive')
+                          speakSentence(q.audioText!, 1.0, {}, voicePreset, 'expressive', q.id)
                         }
                         className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-800 hover:bg-emerald-200"
                       >

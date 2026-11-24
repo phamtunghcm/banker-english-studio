@@ -36,7 +36,6 @@ interface DashboardViewProps {
   electiveLessons: Lesson[];
   onSelectLesson: (lesson: Lesson) => void;
   onStartWeeklyTest: (week: 1 | 2 | 3 | 4) => void;
-  onOpenGameArena: () => void;
   onOpenCustomModal: () => void;
   onOpenProfileModal: () => void;
   onChangeTheme: (theme: UiThemeId) => void;
@@ -79,7 +78,6 @@ export function DashboardView({
   electiveLessons,
   onSelectLesson,
   onStartWeeklyTest,
-  onOpenGameArena,
   onOpenCustomModal,
   onOpenProfileModal,
   onChangeTheme,
@@ -163,14 +161,6 @@ export function DashboardView({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={onOpenGameArena}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-amber-500 px-3.5 py-2 text-xs font-extrabold text-slate-950 shadow-sm hover:bg-amber-400"
-          >
-            <Gamepad2 className="h-4 w-4" />
-            Game Arena (Lv.{gameLevel.level} • {progress.gameXp ?? 0} XP)
-          </button>
           <button
             type="button"
             onClick={onReopenOnboarding}
@@ -267,11 +257,12 @@ export function DashboardView({
             type="button"
             onClick={() =>
               speakSentence(
-                'Hello! Ready for your daily banking English session?',
+                'Hello! Welcome to FinTech Banker English Studio. Let us practice speaking naturally today.',
                 1.0,
                 {},
                 activeVoice,
-                'expressive'
+                'expressive',
+                'preview'
               )
             }
             className="rounded-full border border-emerald-300 bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-800 hover:bg-emerald-100"
@@ -294,14 +285,10 @@ export function DashboardView({
                 Tự động sắp xếp theo lĩnh vực ({progress.profile.focusTracks.map((t) => TRACK_META[t].shortLabel).join(', ')}) và mục tiêu {GOAL_LABELS[progress.profile.goal]}
               </p>
             </div>
-            <button
-              type="button"
-              onClick={onOpenGameArena}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-amber-400 bg-amber-100 px-3 py-1.5 text-xs font-extrabold text-amber-900 hover:bg-amber-200"
-            >
-              <Gamepad2 className="h-3.5 w-3.5" />
-              Chơi Game ôn bài ngay
-            </button>
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-xs font-extrabold text-amber-900">
+              <Gamepad2 className="h-3.5 w-3.5 text-amber-600" />
+              Mini-Game tích hợp trong từng bài • Lv.{gameLevel.level} ({progress.gameXp ?? 0} XP)
+            </span>
           </div>
           <div className="grid gap-3 md:grid-cols-3">
             {todayRecommendations.map((lesson, idx) => {
