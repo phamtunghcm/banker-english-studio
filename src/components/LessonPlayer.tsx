@@ -462,9 +462,9 @@ export function LessonPlayer({
                   aria-label="Giọng đọc"
                   value={selectedVoiceURI}
                   onChange={(e) => setSelectedVoiceURI(e.target.value)}
-                  className="max-w-56 truncate rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-800"
+                  className="max-w-64 truncate rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-800"
                 >
-                  <option value="">Tự động: Giọng nữ truyền cảm nhất</option>
+                  <option value="">Giọng: Tự động (Nữ ưu tiên)</option>
                   {voices.map((v) => (
                     <option key={v.voiceURI} value={v.voiceURI}>
                       {v.displayLabel}
