@@ -26,15 +26,14 @@ import {
 } from '../utils/wordScoring';
 import {
   analyzePronunciation,
-  buildKaraokeReport,
   type PronunciationReport,
 } from '../utils/pronunciationCoach';
 import {
   buildKaraokeSchedule,
-  evaluateKaraokeWord,
   startKaraokeMicSession,
   type KaraokeMicHandle,
 } from '../utils/karaokeRecorder';
+import { transcribeWithWhisper } from '../utils/whisperEngine';
 import {
   CURATED_FEMALE_VOICES,
   isSpeechRecognitionSupported,
@@ -174,13 +173,13 @@ export function LessonPlayer({
   const [noSub, setNoSub] = useState(false);
   const [showVi, setShowVi] = useState(true);
 
-  // Karaoke Shadowing state (real Web Audio mic + live karaoke word cursor)
+  // Karaoke Shadowing state (real Web Audio mic + voice-triggered karaoke cursor + local Whisper AI)
   const [isKaraokeRunning, setIsKaraokeRunning] = useState(false);
+  const [voiceStarted, setVoiceStarted] = useState(false);
   const [karaokeWordIdx, setKaraokeWordIdx] = useState<number>(-1);
-  const [karaokeLiveStatuses, setKaraokeLiveStatuses] = useState<
-    Record<number, 'correct' | 'near' | 'missing'>
-  >({});
   const [micLevel, setMicLevel] = useState(0);
+  const [isAnalyzingAi, setIsAnalyzingAi] = useState(false);
+  const [aiLoadProgress, setAiLoadProgress] = useState<number | null>(null);
   const [recordedAudioUrl, setRecordedAudioUrl] = useState<string | null>(null);
   const [recordingFixWord, setRecordingFixWord] = useState<string | null>(null);
   const [fixedWords, setFixedWords] = useState<Record<string, boolean>>({});
@@ -192,7 +191,6 @@ export function LessonPlayer({
 
   const karaokeMicRef = useRef<KaraokeMicHandle | null>(null);
   const karaokeRafRef = useRef<number | null>(null);
-  const karaokeTranscriptRef = useRef<string>('');
 
   // Dictation state
   const [dictationInputs, setDictationInputs] = useState<Record<string, string>>({});
@@ -210,38 +208,65 @@ export function LessonPlayer({
   const currentDictInput = dictationInputs[currentSentence.id] ?? '';
   const currentDictResult = dictationResults[currentSentence.id] ?? null;
 
-  const stopKaraokeSession = async (finalize = false, peaks?: number[]) => {
+  const stopKaraokeSession = async (shouldTranscribe = false) => {
     if (karaokeRafRef.current !== null) {
       cancelAnimationFrame(karaokeRafRef.current);
       karaokeRafRef.current = null;
     }
-    stopListening(true);
     setIsKaraokeRunning(false);
+    setVoiceStarted(false);
     setMicLevel(0);
+    setKaraokeWordIdx(-1);
 
     const handle = karaokeMicRef.current;
     karaokeMicRef.current = null;
-    if (handle) {
-      const url = await handle.stop();
-      if (url) {
-        setRecordedAudioUrl((prev) => {
-          if (prev) URL.revokeObjectURL(prev);
-          return url;
-        });
-      }
+    if (!handle) return;
+
+    const recording = await handle.stop();
+    if (recording.blobUrl) {
+      setRecordedAudioUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return recording.blobUrl;
+      });
     }
 
-    if (finalize && peaks) {
-      const finalStatuses = peaks.map((p) => evaluateKaraokeWord(p));
-      const report = buildKaraokeReport(
-        currentSentence.en,
-        finalStatuses,
-        karaokeTranscriptRef.current
+    if (!shouldTranscribe) return;
+
+    // Strict honesty gate: if user didn't speak, NEVER give fake score!
+    if (!recording.hasVoice || recording.pcm16k.length < 1600) {
+      const zeroReport = analyzePronunciation(currentSentence.en, '');
+      setSpokenText('');
+      setShadowingResults((prev) => ({ ...prev, [currentSentence.id]: zeroReport }));
+      setMicError(
+        '0% — Không phát hiện giọng nói từ Micro. Hãy kiểm tra Micro và đọc to, rõ hơn!'
       );
+      return;
+    }
+
+    setIsAnalyzingAi(true);
+    setMicError(null);
+    try {
+      const transcript = await transcribeWithWhisper(recording.pcm16k, (pct) => {
+        setAiLoadProgress(pct < 100 ? pct : null);
+      });
+      setAiLoadProgress(null);
+      setSpokenText(transcript);
+      const report = analyzePronunciation(currentSentence.en, transcript);
       setShadowingResults((prev) => ({ ...prev, [currentSentence.id]: report }));
       onComplete({ shadowingScore: report.accuracy });
+      if (!transcript) {
+        setMicError('AI chưa nhận diện được từ tiếng Anh rõ ràng — hãy nghe mẫu và đọc lại chậm hơn.');
+      }
+    } catch (err) {
+      setAiLoadProgress(null);
+      setMicError(
+        err instanceof Error
+          ? `Lỗi Whisper AI: ${err.message}`
+          : 'Không thể giải mã giọng nói bằng Whisper AI.'
+      );
+    } finally {
+      setIsAnalyzingAi(false);
     }
-    setKaraokeWordIdx(-1);
   };
 
   useEffect(() => {
@@ -340,65 +365,52 @@ export function LessonPlayer({
 
   const handleStartKaraoke = async () => {
     if (isKaraokeRunning) {
-      await stopKaraokeSession(false);
+      await stopKaraokeSession(true);
       return;
     }
 
     stopSpeaking();
     setIsPlaying(false);
     setMicError(null);
-    setKaraokeLiveStatuses({});
-    karaokeTranscriptRef.current = '';
+    setVoiceStarted(false);
+    setKaraokeWordIdx(-1);
 
     try {
       const micHandle = await startKaraokeMicSession();
       karaokeMicRef.current = micHandle;
       setIsKaraokeRunning(true);
 
-      // Optional background speech recognition (silently ignored if Safari/WebView blocks it)
-      if (micSupported) {
-        startListening(
-          (transcript) => {
-            karaokeTranscriptRef.current = transcript;
-            setSpokenText(transcript);
-          },
-          () => {
-            // Silently rely on Web Audio karaoke level — never break the karaoke flow!
-          },
-          () => {}
-        );
-      }
-
       const schedule = buildKaraokeSchedule(currentSentence.en, rate);
       const totalMs = schedule[schedule.length - 1]?.endMs ?? 2500;
-      const wordPeaks = new Array<number>(schedule.length).fill(0);
-      const startTime = performance.now();
+      let speechStartTime: number | null = null;
 
       const tick = () => {
         if (!karaokeMicRef.current) return;
-        const elapsed = performance.now() - startTime;
         const level = karaokeMicRef.current.getLevel();
         setMicLevel(level);
 
+        // Karaoke cursor ONLY starts advancing once real voice is detected (> 0.05)
+        if (speechStartTime === null) {
+          if (level >= 0.05) {
+            speechStartTime = performance.now();
+            setVoiceStarted(true);
+            setKaraokeWordIdx(0);
+          }
+          karaokeRafRef.current = requestAnimationFrame(tick);
+          return;
+        }
+
+        const elapsed = performance.now() - speechStartTime;
         const currentSlot =
           schedule.find((s) => elapsed >= s.startMs && elapsed < s.endMs) ??
           schedule[schedule.length - 1];
 
         if (currentSlot) {
           setKaraokeWordIdx(currentSlot.index);
-          if (level > wordPeaks[currentSlot.index]) {
-            wordPeaks[currentSlot.index] = level;
-          }
-          // Live colorize completed words as cursor moves past them
-          const liveMap: Record<number, 'correct' | 'near' | 'missing'> = {};
-          for (let i = 0; i < currentSlot.index; i++) {
-            liveMap[i] = evaluateKaraokeWord(wordPeaks[i]);
-          }
-          setKaraokeLiveStatuses(liveMap);
         }
 
-        if (elapsed >= totalMs + 250) {
-          void stopKaraokeSession(true, wordPeaks);
+        if (elapsed >= totalMs + 1000) {
+          void stopKaraokeSession(true);
           return;
         }
         karaokeRafRef.current = requestAnimationFrame(tick);
@@ -789,17 +801,13 @@ export function LessonPlayer({
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
             <p className="text-lg font-extrabold leading-relaxed text-slate-900">
               {currentSentence.en.split(/\s+/).map((word, idx) => {
-                const isActiveKaraoke = isKaraokeRunning && karaokeWordIdx === idx;
-                const liveStatus = karaokeLiveStatuses[idx];
+                const isActiveKaraoke = isKaraokeRunning && voiceStarted && karaokeWordIdx === idx;
+                const isPassed = isKaraokeRunning && voiceStarted && idx < karaokeWordIdx;
                 const colorClass = isActiveKaraoke
                   ? 'scale-105 bg-amber-200 text-amber-950 border-b-2 border-amber-600'
-                  : liveStatus === 'correct'
-                    ? 'bg-emerald-100 text-emerald-900'
-                    : liveStatus === 'near'
-                      ? 'bg-amber-100 text-amber-900'
-                      : liveStatus === 'missing'
-                        ? 'bg-rose-100 text-rose-800 line-through'
-                        : 'text-slate-900 hover:bg-sky-100 hover:text-sky-900';
+                  : isPassed
+                    ? 'text-slate-500'
+                    : 'text-slate-900 hover:bg-sky-100 hover:text-sky-900';
 
                 return (
                   <button
@@ -822,8 +830,12 @@ export function LessonPlayer({
             {isKaraokeRunning && (
               <div className="mt-3 space-y-1">
                 <div className="flex items-center justify-between text-[11px] font-bold text-emerald-800">
-                  <span>🎤 Đọc theo chữ đang sáng màu vàng...</span>
-                  <span>Âm lượng mic: {Math.round(micLevel * 100)}%</span>
+                  <span>
+                    {voiceStarted
+                      ? '🎤 Đang chạy nhịp Karaoke — đọc xong bấm "Dừng & Chấm AI"'
+                      : '🎙️ Đang chờ bạn bắt đầu đọc chữ đầu tiên...'}
+                  </span>
+                  <span>Mic: {Math.round(micLevel * 100)}%</span>
                 </div>
                 <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-200">
                   <div
@@ -833,6 +845,14 @@ export function LessonPlayer({
                 </div>
               </div>
             )}
+
+            {isAnalyzingAi && (
+              <div className="mt-3 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-bold text-sky-900">
+                {aiLoadProgress !== null
+                  ? `⏳ Đang tải lõi Whisper AI vào trình duyệt (chỉ tải 1 lần): ${aiLoadProgress}%...`
+                  : '🧠 Whisper AI đang phân tích chính xác từng chữ từ giọng đọc của bạn...'}
+              </div>
+            )}
           </div>
 
           {/* Primary Karaoke + Sample Actions */}
@@ -840,7 +860,8 @@ export function LessonPlayer({
             <button
               type="button"
               onClick={() => playIndex(activeSentenceIdx)}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-xs font-bold text-slate-800 hover:bg-slate-100"
+              disabled={isAnalyzingAi}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-xs font-bold text-slate-800 hover:bg-slate-100 disabled:opacity-50"
             >
               <Volume2 className="h-4 w-4 text-emerald-700" />
               Nghe mẫu
@@ -848,15 +869,16 @@ export function LessonPlayer({
 
             <button
               type="button"
+              disabled={isAnalyzingAi}
               onClick={() => void handleStartKaraoke()}
-              className={`inline-flex items-center gap-1.5 rounded-xl px-5 py-2 text-xs font-extrabold shadow-sm ${
+              className={`inline-flex items-center gap-1.5 rounded-xl px-5 py-2 text-xs font-extrabold shadow-sm disabled:opacity-50 ${
                 isKaraokeRunning
                   ? 'animate-pulse bg-rose-600 text-white'
                   : 'bg-emerald-600 text-white hover:bg-emerald-700'
               }`}
             >
               {isKaraokeRunning ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-              {isKaraokeRunning ? 'Dừng Karaoke' : 'Bắt đầu đọc Karaoke'}
+              {isKaraokeRunning ? 'Dừng & Chấm AI' : 'Bắt đầu đọc Karaoke (AI)'}
             </button>
           </div>
 

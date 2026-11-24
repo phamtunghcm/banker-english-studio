@@ -1,5 +1,3 @@
-import type { WordStatus } from '../types/curriculum';
-
 export interface KaraokeWordSlot {
   index: number;
   word: string;
@@ -8,8 +6,8 @@ export interface KaraokeWordSlot {
 }
 
 /**
- * Computes per-word karaoke timing slots proportional to word length so
- * short function words and long banking terms advance at natural speech pace.
+ * Computes per-word karaoke pacing slots proportional to word length
+ * (used strictly as a visual reading guide — never for fake scoring).
  */
 export function buildKaraokeSchedule(sentence: string, rate = 1.0): KaraokeWordSlot[] {
   const words = sentence.trim().split(/\s+/).filter(Boolean);
@@ -18,7 +16,7 @@ export function buildKaraokeSchedule(sentence: string, rate = 1.0): KaraokeWordS
 
   return words.map((word, index) => {
     const cleanLen = word.replace(/[^a-zA-Z0-9]/g, '').length;
-    const duration = Math.max(260, Math.round((190 + cleanLen * 52) / safeRate));
+    const duration = Math.max(280, Math.round((210 + cleanLen * 55) / safeRate));
     const slot: KaraokeWordSlot = {
       index,
       word,
@@ -31,29 +29,68 @@ export function buildKaraokeSchedule(sentence: string, rate = 1.0): KaraokeWordS
 }
 
 /**
- * Evaluates a single word during karaoke playback using real microphone RMS energy
- * combined with speech recognition status when available.
+ * Downsamples arbitrary AudioBuffer/Float32 PCM to 16kHz mono for Whisper AI
+ * and measures true peak RMS energy to detect genuine speech vs silence.
  */
-export function evaluateKaraokeWord(
-  peakEnergy: number,
-  speechStatus?: WordStatus
-): WordStatus {
-  if (speechStatus === 'correct') return 'correct';
-  if (speechStatus === 'near') return peakEnergy >= 0.015 ? 'near' : 'missing';
-  // Offline / Safari Web Audio energy-based karaoke rhythm & clarity check
-  if (peakEnergy >= 0.04) return 'correct';
-  if (peakEnergy >= 0.015) return 'near';
-  return 'missing';
+export function resampleTo16k(input: Float32Array, inputSampleRate: number): Float32Array {
+  if (inputSampleRate === 16000) return input;
+  const ratio = inputSampleRate / 16000;
+  const outLength = Math.max(1, Math.round(input.length / ratio));
+  const output = new Float32Array(outLength);
+  for (let i = 0; i < outLength; i++) {
+    const pos = i * ratio;
+    const idx = Math.floor(pos);
+    const frac = pos - idx;
+    const s0 = input[idx] ?? 0;
+    const s1 = input[Math.min(idx + 1, input.length - 1)] ?? s0;
+    output[i] = s0 + (s1 - s0) * frac;
+  }
+  return output;
+}
+
+/**
+ * Checks whether a 16kHz PCM recording actually contains human voice above silence/noise floor.
+ */
+export function detectVoiceActivity(pcm: Float32Array): { hasVoice: boolean; peakRms: number } {
+  if (pcm.length < 1600) return { hasVoice: false, peakRms: 0 };
+  const frameSize = 800; // 50ms frames at 16kHz
+  let peakRms = 0;
+  let activeFrames = 0;
+
+  for (let offset = 0; offset + frameSize <= pcm.length; offset += frameSize) {
+    let sumSq = 0;
+    for (let i = 0; i < frameSize; i++) {
+      const s = pcm[offset + i];
+      sumSq += s * s;
+    }
+    const rms = Math.sqrt(sumSq / frameSize);
+    if (rms > peakRms) peakRms = rms;
+    if (rms >= 0.022) activeFrames++;
+  }
+
+  // Require real sustained sound (at least 3 frames = 150ms above threshold)
+  return {
+    hasVoice: peakRms >= 0.025 && activeFrames >= 3,
+    peakRms,
+  };
+}
+
+export interface KaraokeRecordingResult {
+  blobUrl: string | null;
+  pcm16k: Float32Array;
+  hasVoice: boolean;
+  peakRms: number;
 }
 
 export interface KaraokeMicHandle {
   getLevel: () => number;
-  stop: () => Promise<string | null>;
+  stop: () => Promise<KaraokeRecordingResult>;
 }
 
 /**
- * Opens a Safari- & Chrome-compatible Web Audio microphone session (AnalyserNode + MediaRecorder)
- * that never depends on Google/Apple Speech cloud servers.
+ * Opens a Safari- & Chrome-compatible microphone session capturing BOTH:
+ * 1) Real 16kHz PCM audio for local Whisper AI speech-to-text scoring
+ * 2) Playable MP4/WebM audio blob so the learner can replay their own voice
  */
 export async function startKaraokeMicSession(): Promise<KaraokeMicHandle> {
   if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
@@ -64,7 +101,7 @@ export async function startKaraokeMicSession(): Promise<KaraokeMicHandle> {
     audio: {
       echoCancellation: true,
       noiseSuppression: true,
-      autoGainControl: true,
+      autoGainControl: false, // Prevent boosting silent room fan noise into fake speech
     },
   });
 
@@ -113,38 +150,52 @@ export async function startKaraokeMicSession(): Promise<KaraokeMicHandle> {
       const normalized = (dataArray[i] - 128) / 128;
       sumSq += normalized * normalized;
     }
-    return Math.min(1, Math.sqrt(sumSq / dataArray.length) * 2.2);
+    return Math.min(1, Math.sqrt(sumSq / dataArray.length) * 2.5);
   };
 
-  const stop = (): Promise<string | null> => {
+  const stop = (): Promise<KaraokeRecordingResult> => {
     return new Promise((resolve) => {
-      const cleanup = () => {
+      const finalizeBlob = async (blob: Blob | null) => {
         stream.getTracks().forEach((t) => t.stop());
+        let pcm16k: Float32Array = new Float32Array(0);
+        let blobUrl: string | null = null;
+
+        if (blob && blob.size > 0) {
+          blobUrl = URL.createObjectURL(blob);
+          try {
+            const arrayBuf = await blob.arrayBuffer();
+            const decodeCtx = audioCtx ?? (AudioCtx ? new AudioCtx() : null);
+            if (decodeCtx) {
+              const decoded = await decodeCtx.decodeAudioData(arrayBuf.slice(0));
+              const mono = decoded.getChannelData(0);
+              pcm16k = resampleTo16k(mono, decoded.sampleRate);
+            }
+          } catch {
+            // Keep empty PCM if browser fails to decode blob
+          }
+        }
+
         if (audioCtx) {
           void audioCtx.close().catch(() => {});
           audioCtx = null;
         }
+
+        const { hasVoice, peakRms } = detectVoiceActivity(pcm16k);
+        resolve({ blobUrl, pcm16k, hasVoice, peakRms });
       };
 
       if (recorder && recorder.state !== 'inactive') {
         recorder.onstop = () => {
-          cleanup();
-          if (chunks.length > 0) {
-            const blob = new Blob(chunks, { type: chosenMime });
-            resolve(URL.createObjectURL(blob));
-          } else {
-            resolve(null);
-          }
+          const blob = chunks.length > 0 ? new Blob(chunks, { type: chosenMime }) : null;
+          void finalizeBlob(blob);
         };
         try {
           recorder.stop();
         } catch {
-          cleanup();
-          resolve(null);
+          void finalizeBlob(null);
         }
       } else {
-        cleanup();
-        resolve(null);
+        void finalizeBlob(null);
       }
     });
   };
