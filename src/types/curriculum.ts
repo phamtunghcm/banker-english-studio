@@ -35,6 +35,7 @@ export interface Lesson {
   title: string;
   scenario: string;
   sentences: LessonSentence[];
+  isCustom?: boolean;
 }
 
 export interface WeeklyTestQuestion {
@@ -66,6 +67,13 @@ export interface WeeklyTestRecord {
   completedAt: string;
 }
 
+export interface SavedWord {
+  word: string;
+  contextSentence: string;
+  lessonId: string;
+  addedAt: string;
+}
+
 export interface UserProgress {
   onboarded: boolean;
   selectedLevel: LevelTier;
@@ -74,4 +82,6 @@ export interface UserProgress {
   lastActiveDate: string | null;
   completedLessons: Record<string, LessonRecord>;
   weeklyTestScores: Record<number, WeeklyTestRecord>;
+  savedWords?: SavedWord[];
+  customLessons?: Lesson[];
 }

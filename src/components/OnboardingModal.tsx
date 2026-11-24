@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { Award, CheckCircle2, Compass, Sparkles } from 'lucide-react';
+import { Award, CheckCircle2, Compass, Sparkles, Volume2 } from 'lucide-react';
 import type { LevelTier, RankTitle } from '../types/curriculum';
 import { PLACEMENT_QUESTIONS } from '../data';
+import { speakSentence } from '../utils/speechEngine';
 
 interface OnboardingModalProps {
   onComplete: (level: LevelTier, rank: RankTitle) => void;
@@ -89,7 +90,7 @@ export function OnboardingModal({ onComplete }: OnboardingModalProps) {
           }`}
         >
           <Award className="mr-2 inline h-4 w-4" />
-          Làm Placement Test (5 câu)
+          Làm Placement Test ({PLACEMENT_QUESTIONS.length} câu)
         </button>
       </div>
 
@@ -116,9 +117,21 @@ export function OnboardingModal({ onComplete }: OnboardingModalProps) {
         <div className="mt-5 space-y-4">
           {PLACEMENT_QUESTIONS.map((q, idx) => (
             <div key={q.id} className="rounded-xl border border-slate-800 bg-slate-950/70 p-4">
-              <p className="text-sm font-medium text-white">
-                {idx + 1}. {q.prompt}
-              </p>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm font-medium text-white">
+                  {idx + 1}. {q.prompt}
+                </p>
+                {q.audioText && (
+                  <button
+                    type="button"
+                    onClick={() => speakSentence(q.audioText!, 1.0)}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-500/20 px-3 py-1 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/30"
+                  >
+                    <Volume2 className="h-3.5 w-3.5" />
+                    Nghe đoạn hội thoại
+                  </button>
+                )}
+              </div>
               <div className="mt-3 grid gap-2 sm:grid-cols-2">
                 {q.options.map((opt, optIdx) => {
                   const selected = answers[q.id] === optIdx;

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   ArrowLeft,
+  Bookmark,
   Captions,
   CheckCircle2,
   EyeOff,
@@ -21,17 +22,21 @@ import {
   scoreWordAlignment,
 } from '../utils/wordScoring';
 import {
+  getAvailableEnglishVoices,
   isSpeechRecognitionSupported,
   speakSentence,
   startListening,
   stopListening,
   stopSpeaking,
+  type VoiceOption,
 } from '../utils/speechEngine';
 
 type PlayerTab = 'subtitles' | 'shadowing' | 'dictation' | 'cloze';
 
 interface LessonPlayerProps {
   lesson: Lesson;
+  savedWords?: string[];
+  onToggleSaveWord?: (word: string, contextSentence: string) => void;
   onComplete: (result: {
     shadowingScore?: number;
     dictationScore?: number;
@@ -40,24 +45,12 @@ interface LessonPlayerProps {
   onBack: () => void;
 }
 
-function WordScoreBadge({ item }: { item: WordScoreResult }) {
-  const colorMap = {
-    correct: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
-    near: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
-    missing: 'bg-rose-500/20 text-rose-300 border-rose-500/40 line-through decoration-rose-400/70',
-  };
-  return (
-    <span
-      className={`inline-flex items-center rounded-md border px-2 py-0.5 text-sm font-medium ${colorMap[item.status]}`}
-      title={item.spoken ? `Bạn nói: "${item.spoken}"` : 'Thiếu hoặc chưa khớp'}
-    >
-      {item.expected}
-    </span>
-  );
+function escapeRegExp(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function maskClozeSentence(sentence: LessonSentence): { before: string; after: string } {
-  const regex = new RegExp(`(${sentence.clozeWord})`, 'i');
+  const regex = new RegExp(`\\b(${escapeRegExp(sentence.clozeWord)})\\b`, 'i');
   const parts = sentence.en.split(regex);
   if (parts.length < 3) {
     return { before: sentence.en, after: '' };
@@ -68,7 +61,71 @@ function maskClozeSentence(sentence: LessonSentence): { before: string; after: s
   };
 }
 
-export function LessonPlayer({ lesson, onComplete, onBack }: LessonPlayerProps) {
+function WordScoreBadge({
+  item,
+  onSpeakWord,
+}: {
+  item: WordScoreResult;
+  onSpeakWord: (word: string) => void;
+}) {
+  const colorMap = {
+    correct: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
+    near: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
+    missing: 'bg-rose-500/20 text-rose-300 border-rose-500/40 line-through decoration-rose-400/70',
+  };
+  return (
+    <button
+      type="button"
+      onClick={() => onSpeakWord(item.expected)}
+      className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-sm font-medium transition hover:brightness-125 ${colorMap[item.status]}`}
+      title={
+        item.spoken
+          ? `Bạn nói: "${item.spoken}" — Bấm để nghe phát âm chuẩn`
+          : 'Thiếu hoặc chưa khớp — Bấm để nghe phát âm chuẩn'
+      }
+    >
+      {item.expected}
+      {item.status !== 'correct' && <Volume2 className="h-3 w-3 opacity-80" />}
+    </button>
+  );
+}
+
+function SentenceSelector({
+  sentences,
+  activeIdx,
+  onSelect,
+}: {
+  sentences: LessonSentence[];
+  activeIdx: number;
+  onSelect: (idx: number) => void;
+}) {
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {sentences.map((s, idx) => (
+        <button
+          key={s.id}
+          type="button"
+          onClick={() => onSelect(idx)}
+          className={`h-8 min-w-8 rounded-lg px-2 text-xs font-semibold transition ${
+            idx === activeIdx
+              ? 'bg-emerald-500 text-slate-950'
+              : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+          }`}
+        >
+          {idx + 1}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+export function LessonPlayer({
+  lesson,
+  savedWords = [],
+  onToggleSaveWord,
+  onComplete,
+  onBack,
+}: LessonPlayerProps) {
   const [activeTab, setActiveTab] = useState<PlayerTab>('subtitles');
   const [activeSentenceIdx, setActiveSentenceIdx] = useState(0);
   const [activeWordIdx, setActiveWordIdx] = useState<number | null>(null);
@@ -76,6 +133,8 @@ export function LessonPlayer({ lesson, onComplete, onBack }: LessonPlayerProps) 
   const [loopSentence, setLoopSentence] = useState(false);
   const [rate, setRate] = useState(1.0);
   const [fontScale, setFontScale] = useState<'normal' | 'large'>('normal');
+  const [voices, setVoices] = useState<VoiceOption[]>(() => getAvailableEnglishVoices());
+  const [selectedVoiceURI, setSelectedVoiceURI] = useState<string>('');
 
   // Sub / No-Sub toggles
   const [noSub, setNoSub] = useState(false);
@@ -85,17 +144,15 @@ export function LessonPlayer({ lesson, onComplete, onBack }: LessonPlayerProps) 
   const [isRecording, setIsRecording] = useState(false);
   const [spokenText, setSpokenText] = useState('');
   const [micError, setMicError] = useState<string | null>(null);
-  const [shadowingResult, setShadowingResult] = useState<{
-    words: WordScoreResult[];
-    accuracy: number;
-  } | null>(null);
+  const [shadowingResults, setShadowingResults] = useState<
+    Record<string, { words: WordScoreResult[]; accuracy: number }>
+  >({});
 
-  // Dictation state
-  const [dictationInput, setDictationInput] = useState('');
-  const [dictationResult, setDictationResult] = useState<{
-    words: WordScoreResult[];
-    accuracy: number;
-  } | null>(null);
+  // Dictation state keyed by sentence.id so switching sentences preserves work
+  const [dictationInputs, setDictationInputs] = useState<Record<string, string>>({});
+  const [dictationResults, setDictationResults] = useState<
+    Record<string, { words: WordScoreResult[]; accuracy: number }>
+  >({});
 
   // Cloze state
   const [clozeAnswers, setClozeAnswers] = useState<Record<string, string>>({});
@@ -103,13 +160,40 @@ export function LessonPlayer({ lesson, onComplete, onBack }: LessonPlayerProps) 
 
   const currentSentence = lesson.sentences[activeSentenceIdx] ?? lesson.sentences[0];
   const micSupported = isSpeechRecognitionSupported();
+  const currentShadowResult = shadowingResults[currentSentence.id] ?? null;
+  const currentDictInput = dictationInputs[currentSentence.id] ?? '';
+  const currentDictResult = dictationResults[currentSentence.id] ?? null;
 
   useEffect(() => {
+    const refreshVoices = () => setVoices(getAvailableEnglishVoices());
+    refreshVoices();
+    const timer = setTimeout(refreshVoices, 400);
     return () => {
+      clearTimeout(timer);
       stopSpeaking();
       stopListening();
     };
   }, []);
+
+  const stopAllAudioAndMic = () => {
+    stopSpeaking();
+    stopListening();
+    setIsPlaying(false);
+    setIsRecording(false);
+    setActiveWordIdx(null);
+  };
+
+  const handleSelectSentence = (idx: number) => {
+    stopAllAudioAndMic();
+    setActiveSentenceIdx(idx);
+    setSpokenText('');
+    setMicError(null);
+  };
+
+  const handleSelectTab = (tab: PlayerTab) => {
+    stopAllAudioAndMic();
+    setActiveTab(tab);
+  };
 
   const playIndex = (index: number) => {
     const sentence = lesson.sentences[index];
@@ -119,27 +203,40 @@ export function LessonPlayer({ lesson, onComplete, onBack }: LessonPlayerProps) 
       return;
     }
 
+    stopListening();
+    setIsRecording(false);
     setActiveSentenceIdx(index);
     setIsPlaying(true);
     setActiveWordIdx(0);
 
-    speakSentence(sentence.en, rate, {
-      onWordIndex: (wIdx) => setActiveWordIdx(wIdx),
-      onEnd: () => {
-        if (loopSentence) {
-          playIndex(index);
-        } else if (activeTab === 'subtitles' && index + 1 < lesson.sentences.length) {
-          playIndex(index + 1);
-        } else {
+    speakSentence(
+      sentence.en,
+      rate,
+      {
+        onWordIndex: (wIdx) => setActiveWordIdx(wIdx),
+        onEnd: () => {
+          if (loopSentence) {
+            playIndex(index);
+          } else if (activeTab === 'subtitles' && index + 1 < lesson.sentences.length) {
+            playIndex(index + 1);
+          } else {
+            setIsPlaying(false);
+            setActiveWordIdx(null);
+          }
+        },
+        onError: () => {
           setIsPlaying(false);
           setActiveWordIdx(null);
-        }
+        },
       },
-      onError: () => {
-        setIsPlaying(false);
-        setActiveWordIdx(null);
-      },
-    });
+      selectedVoiceURI || undefined
+    );
+  };
+
+  const handleSpeakSingleWord = (word: string) => {
+    const clean = word.replace(/^[^\w]+|[^\w]+$/g, '');
+    if (!clean) return;
+    speakSentence(clean, 0.85, {}, selectedVoiceURI || undefined);
   };
 
   const handleTogglePlay = () => {
@@ -154,7 +251,7 @@ export function LessonPlayer({ lesson, onComplete, onBack }: LessonPlayerProps) 
 
   const handleScoreShadowing = (textToScore: string) => {
     const res = scoreWordAlignment(currentSentence.en, textToScore);
-    setShadowingResult(res);
+    setShadowingResults((prev) => ({ ...prev, [currentSentence.id]: res }));
     onComplete({ shadowingScore: res.accuracy });
   };
 
@@ -166,9 +263,10 @@ export function LessonPlayer({ lesson, onComplete, onBack }: LessonPlayerProps) 
       return;
     }
 
+    stopSpeaking();
+    setIsPlaying(false);
     setMicError(null);
     setSpokenText('');
-    setShadowingResult(null);
     let latestTranscript = '';
 
     const started = startListening(
@@ -194,8 +292,8 @@ export function LessonPlayer({ lesson, onComplete, onBack }: LessonPlayerProps) 
   };
 
   const handleCheckDictation = () => {
-    const res = scoreDictation(currentSentence.en, dictationInput);
-    setDictationResult(res);
+    const res = scoreDictation(currentSentence.en, currentDictInput);
+    setDictationResults((prev) => ({ ...prev, [currentSentence.id]: res }));
     onComplete({ dictationScore: res.accuracy });
   };
 
@@ -223,8 +321,7 @@ export function LessonPlayer({ lesson, onComplete, onBack }: LessonPlayerProps) 
           <button
             type="button"
             onClick={() => {
-              stopSpeaking();
-              stopListening();
+              stopAllAudioAndMic();
               onBack();
             }}
             className="inline-flex items-center gap-2 rounded-lg border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-800"
@@ -233,7 +330,9 @@ export function LessonPlayer({ lesson, onComplete, onBack }: LessonPlayerProps) 
             Lộ trình
           </button>
           <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-emerald-400">
-            <span>Tuần {lesson.week} • Ngày {lesson.day}</span>
+            <span>
+              {lesson.isCustom ? 'Bài tự tạo' : `Tuần ${lesson.week} • Ngày ${lesson.day}`}
+            </span>
             <span>•</span>
             <span>{lesson.track.toUpperCase()}</span>
           </div>
@@ -244,7 +343,7 @@ export function LessonPlayer({ lesson, onComplete, onBack }: LessonPlayerProps) 
           <p className="text-sm text-slate-400">{lesson.scenario}</p>
         </div>
 
-        {/* Live Subtitle Stage (Inspired by reference app) */}
+        {/* Live Subtitle Stage */}
         <div className="mt-4 rounded-xl border border-slate-800 bg-slate-950/80 p-5 text-center">
           {noSub ? (
             <div className="py-4 text-sm text-slate-400">
@@ -274,13 +373,11 @@ export function LessonPlayer({ lesson, onComplete, onBack }: LessonPlayerProps) 
                   );
                 })}
               </p>
-              {showVi && (
-                <p className="text-sm text-slate-400">{currentSentence.vi}</p>
-              )}
+              {showVi && <p className="text-sm text-slate-400">{currentSentence.vi}</p>}
             </div>
           )}
 
-          {/* Playback Controls */}
+          {/* Playback & Voice Controls */}
           <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
             <button
               type="button"
@@ -343,6 +440,22 @@ export function LessonPlayer({ lesson, onComplete, onBack }: LessonPlayerProps) 
               <option value={1.25}>1.25x</option>
             </select>
 
+            {voices.length > 0 && (
+              <select
+                aria-label="Giọng đọc"
+                value={selectedVoiceURI}
+                onChange={(e) => setSelectedVoiceURI(e.target.value)}
+                className="max-w-44 truncate rounded-full border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-slate-200"
+              >
+                <option value="">Giọng nữ ưu tiên</option>
+                {voices.map((v) => (
+                  <option key={v.voiceURI} value={v.voiceURI}>
+                    {v.name} ({v.lang})
+                  </option>
+                ))}
+              </select>
+            )}
+
             <button
               type="button"
               onClick={() => setFontScale((s) => (s === 'normal' ? 'large' : 'normal'))}
@@ -368,7 +481,7 @@ export function LessonPlayer({ lesson, onComplete, onBack }: LessonPlayerProps) 
               <button
                 key={tab.id}
                 type="button"
-                onClick={() => setActiveTab(tab.id as PlayerTab)}
+                onClick={() => handleSelectTab(tab.id as PlayerTab)}
                 className={`flex items-center justify-center gap-2 rounded-xl border px-3 py-2.5 text-sm font-semibold transition ${
                   active
                     ? 'border-emerald-500 bg-emerald-500/20 text-emerald-300'
@@ -383,9 +496,9 @@ export function LessonPlayer({ lesson, onComplete, onBack }: LessonPlayerProps) 
         </div>
       </div>
 
-      {/* Tab 1: Phụ đề (Listen & Word Sync) */}
+      {/* Tab 1: Phụ đề (Listen & Word Sync + Key Terms) */}
       {activeTab === 'subtitles' && (
-        <div className="space-y-2.5 rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
+        <div className="space-y-3 rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
           {noSub ? (
             <p className="py-6 text-center text-sm text-slate-400">
               Bạn đang bật chế độ <strong>No-Sub</strong>. Bấm lại nút No-Sub ở trên để hiện danh sách phụ đề.
@@ -394,42 +507,86 @@ export function LessonPlayer({ lesson, onComplete, onBack }: LessonPlayerProps) 
             lesson.sentences.map((s, idx) => {
               const isCurrent = idx === activeSentenceIdx;
               return (
-                <button
+                <div
                   key={s.id}
-                  type="button"
-                  onClick={() => playIndex(idx)}
-                  className={`w-full rounded-xl border p-4 text-left transition ${
+                  className={`rounded-xl border p-4 transition ${
                     isCurrent
                       ? 'border-emerald-500/60 bg-slate-800/90 shadow-md'
                       : 'border-slate-800/80 bg-slate-950/50 hover:bg-slate-800/50'
                   }`}
                 >
-                  <div className="flex items-start gap-3">
-                    <span className="mt-1 shrink-0 font-mono text-xs text-slate-500">
-                      {s.startTime}
-                    </span>
-                    <div className="space-y-1">
-                      <p className={`font-medium leading-relaxed ${fontScale === 'large' ? 'text-lg' : 'text-base'}`}>
-                        {s.en.split(/\s+/).map((word, wIdx) => {
-                          const isWordActive = isCurrent && isPlaying && activeWordIdx === wIdx;
-                          return (
-                            <span
-                              key={`${s.id}-w-${wIdx}`}
-                              className={`mr-1.5 inline-block ${
-                                isWordActive
-                                  ? 'border-b-2 border-amber-400 font-bold text-amber-300'
-                                  : 'text-slate-100'
-                              }`}
-                            >
-                              {word}
-                            </span>
-                          );
-                        })}
-                      </p>
-                      {showVi && <p className="text-sm text-slate-400">{s.vi}</p>}
+                  <button
+                    type="button"
+                    onClick={() => playIndex(idx)}
+                    className="w-full text-left"
+                  >
+                    <div className="flex items-start gap-3">
+                      <span className="mt-1 shrink-0 font-mono text-xs text-slate-500">
+                        {s.startTime}
+                      </span>
+                      <div className="space-y-1">
+                        <p
+                          className={`font-medium leading-relaxed ${
+                            fontScale === 'large' ? 'text-lg' : 'text-base'
+                          }`}
+                        >
+                          {s.en.split(/\s+/).map((word, wIdx) => {
+                            const isWordActive = isCurrent && isPlaying && activeWordIdx === wIdx;
+                            return (
+                              <span
+                                key={`${s.id}-w-${wIdx}`}
+                                className={`mr-1.5 inline-block ${
+                                  isWordActive
+                                    ? 'border-b-2 border-amber-400 font-bold text-amber-300'
+                                    : 'text-slate-100'
+                                }`}
+                              >
+                                {word}
+                              </span>
+                            );
+                          })}
+                        </p>
+                        {showVi && <p className="text-sm text-slate-400">{s.vi}</p>}
+                      </div>
                     </div>
-                  </div>
-                </button>
+                  </button>
+
+                  {s.keywords.length > 0 && (
+                    <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-800/80 pt-2.5 pl-12">
+                      <span className="text-[11px] font-medium text-slate-500">Thuật ngữ:</span>
+                      {s.keywords.map((kw) => {
+                        const isSaved = savedWords.some(
+                          (sw) => sw.toLowerCase() === kw.toLowerCase()
+                        );
+                        return (
+                          <div key={kw} className="inline-flex items-center rounded-md bg-slate-900 border border-slate-700/80">
+                            <button
+                              type="button"
+                              onClick={() => handleSpeakSingleWord(kw)}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 text-xs text-sky-300 hover:text-sky-200"
+                              title="Nghe phát âm thuật ngữ"
+                            >
+                              <Volume2 className="h-3 w-3" />
+                              {kw}
+                            </button>
+                            {onToggleSaveWord && (
+                              <button
+                                type="button"
+                                onClick={() => onToggleSaveWord(kw, s.en)}
+                                className={`border-l border-slate-700/80 px-1.5 py-0.5 text-xs ${
+                                  isSaved ? 'text-amber-400' : 'text-slate-500 hover:text-amber-300'
+                                }`}
+                                title={isSaved ? 'Đã lưu từ khó' : 'Lưu vào Kho từ khó'}
+                              >
+                                <Bookmark className="h-3 w-3" />
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               );
             })
           )}
@@ -445,29 +602,14 @@ export function LessonPlayer({ lesson, onComplete, onBack }: LessonPlayerProps) 
                 Luyện nói Shadowing — Câu {activeSentenceIdx + 1}/{lesson.sentences.length}
               </h2>
               <p className="text-xs text-slate-400">
-                Nghe câu mẫu rồi bấm Micro để nói lại. Hệ thống chấm điểm từng chữ (Xanh: Chuẩn, Vàng: Gần đúng, Đỏ: Cần sửa).
+                Nghe mẫu rồi bấm Micro nói lại. Bấm trực tiếp vào từ Đỏ/Vàng để nghe máy đọc mẫu từ đó.
               </p>
             </div>
-            <div className="flex gap-2">
-              {lesson.sentences.map((s, idx) => (
-                <button
-                  key={s.id}
-                  type="button"
-                  onClick={() => {
-                    setActiveSentenceIdx(idx);
-                    setShadowingResult(null);
-                    setSpokenText('');
-                  }}
-                  className={`h-8 w-8 rounded-lg text-xs font-semibold ${
-                    idx === activeSentenceIdx
-                      ? 'bg-emerald-500 text-slate-950'
-                      : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                  }`}
-                >
-                  {idx + 1}
-                </button>
-              ))}
-            </div>
+            <SentenceSelector
+              sentences={lesson.sentences}
+              activeIdx={activeSentenceIdx}
+              onSelect={handleSelectSentence}
+            />
           </div>
 
           <div className="rounded-xl border border-slate-800 bg-slate-950 p-4">
@@ -507,21 +649,21 @@ export function LessonPlayer({ lesson, onComplete, onBack }: LessonPlayerProps) 
             </p>
           )}
 
-          {/* Fallback / Manual verification input */}
+          {/* Multi-line textarea for comfortable editing on mobile & desktop */}
           <div className="space-y-2 rounded-xl border border-slate-800/80 bg-slate-950/60 p-4">
             <label className="block text-xs font-medium text-slate-400">
               {micSupported
                 ? 'Nội dung nhận diện từ Micro (hoặc gõ kiểm tra thủ công):'
                 : 'Trình duyệt chưa bật SpeechRecognition — nhập câu để kiểm tra thuật toán chấm từng chữ:'}
             </label>
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <input
-                type="text"
-                value={spokenText}
-                onChange={(e) => setSpokenText(e.target.value)}
-                placeholder="Nhập hoặc dán câu bạn vừa nói..."
-                className="flex-1 rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-emerald-500 focus:outline-none"
-              />
+            <textarea
+              rows={2}
+              value={spokenText}
+              onChange={(e) => setSpokenText(e.target.value)}
+              placeholder="Nhập hoặc dán câu bạn vừa nói..."
+              className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-emerald-500 focus:outline-none"
+            />
+            <div className="flex justify-end">
               <button
                 type="button"
                 onClick={() => handleScoreShadowing(spokenText)}
@@ -532,17 +674,23 @@ export function LessonPlayer({ lesson, onComplete, onBack }: LessonPlayerProps) 
             </div>
           </div>
 
-          {shadowingResult && (
+          {currentShadowResult && (
             <div className="space-y-3 rounded-xl border border-emerald-500/30 bg-slate-950 p-4">
               <div className="flex items-center justify-between">
-                <span className="text-sm font-medium text-slate-300">Kết quả chấm từng chữ:</span>
+                <span className="text-sm font-medium text-slate-300">
+                  Kết quả chấm từng chữ (bấm vào từ để nghe mẫu):
+                </span>
                 <span className="text-xl font-bold text-emerald-400">
-                  {shadowingResult.accuracy}%
+                  {currentShadowResult.accuracy}%
                 </span>
               </div>
               <div className="flex flex-wrap gap-2">
-                {shadowingResult.words.map((w, i) => (
-                  <WordScoreBadge key={`sh-${i}`} item={w} />
+                {currentShadowResult.words.map((w, i) => (
+                  <WordScoreBadge
+                    key={`sh-${currentSentence.id}-${i}`}
+                    item={w}
+                    onSpeakWord={handleSpeakSingleWord}
+                  />
                 ))}
               </div>
             </div>
@@ -550,27 +698,42 @@ export function LessonPlayer({ lesson, onComplete, onBack }: LessonPlayerProps) 
         </div>
       )}
 
-      {/* Tab 3: Chính tả (Dictation) */}
+      {/* Tab 3: Chính tả (Dictation) with Sentence Selector */}
       {activeTab === 'dictation' && (
         <div className="space-y-4 rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
-          <div className="flex items-center justify-between">
-            <h2 className="text-base font-semibold text-white">
-              Chính tả (Dictation) — Câu {activeSentenceIdx + 1}/{lesson.sentences.length}
-            </h2>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h2 className="text-base font-semibold text-white">
+                Chính tả (Dictation) — Câu {activeSentenceIdx + 1}/{lesson.sentences.length}
+              </h2>
+              <p className="text-xs text-slate-400">
+                Nghe và gõ lại nguyên văn từng câu, bấm vào từ sai để nghe lại phát âm.
+              </p>
+            </div>
+            <SentenceSelector
+              sentences={lesson.sentences}
+              activeIdx={activeSentenceIdx}
+              onSelect={handleSelectSentence}
+            />
+          </div>
+
+          <div className="flex justify-start">
             <button
               type="button"
               onClick={() => playIndex(activeSentenceIdx)}
               className="inline-flex items-center gap-2 rounded-lg bg-emerald-500/20 px-3 py-1.5 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/30"
             >
               <Volume2 className="h-4 w-4" />
-              Nghe câu này
+              Nghe câu {activeSentenceIdx + 1}
             </button>
           </div>
 
           <textarea
             rows={3}
-            value={dictationInput}
-            onChange={(e) => setDictationInput(e.target.value)}
+            value={currentDictInput}
+            onChange={(e) =>
+              setDictationInputs((prev) => ({ ...prev, [currentSentence.id]: e.target.value }))
+            }
             placeholder="Nghe và gõ lại nguyên văn câu tiếng Anh..."
             className="w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm text-white placeholder-slate-500 focus:border-emerald-500 focus:outline-none"
           />
@@ -585,14 +748,18 @@ export function LessonPlayer({ lesson, onComplete, onBack }: LessonPlayerProps) 
             </button>
           </div>
 
-          {dictationResult && (
+          {currentDictResult && (
             <div className="space-y-3 rounded-xl border border-slate-800 bg-slate-950 p-4">
               <p className="text-sm font-semibold text-emerald-400">
-                Độ chính xác: {dictationResult.accuracy}%
+                Độ chính xác: {currentDictResult.accuracy}%
               </p>
               <div className="flex flex-wrap gap-2">
-                {dictationResult.words.map((w, i) => (
-                  <WordScoreBadge key={`dict-${i}`} item={w} />
+                {currentDictResult.words.map((w, i) => (
+                  <WordScoreBadge
+                    key={`dict-${currentSentence.id}-${i}`}
+                    item={w}
+                    onSpeakWord={handleSpeakSingleWord}
+                  />
                 ))}
               </div>
             </div>

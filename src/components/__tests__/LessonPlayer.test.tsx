@@ -70,6 +70,8 @@ describe('LessonPlayer', () => {
     render(<LessonPlayer lesson={MOCK_LESSON} onComplete={onComplete} onBack={vi.fn()} />);
 
     fireEvent.click(screen.getByRole('button', { name: /Chính tả/i }));
+    // Sentence selector is present in Dictation tab too
+    expect(screen.getByRole('button', { name: '2' })).toBeInTheDocument();
     const textarea = screen.getByPlaceholderText(/Nghe và gõ lại nguyên văn/i);
     fireEvent.change(textarea, { target: { value: 'Our net interest expanded rapidly.' } });
     fireEvent.click(screen.getByRole('button', { name: /Chấm chính tả/i }));

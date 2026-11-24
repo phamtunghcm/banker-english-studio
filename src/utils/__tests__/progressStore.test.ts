@@ -91,8 +91,13 @@ describe('progressStore', () => {
     expect(state.rank).toBe('VP / Director (C1)');
   });
 
-  it('computes accurate track completion percentages', () => {
+  it('computes accurate track completion percentages only when threshold >= 75 or cloze completed', () => {
     let state = createInitialProgress();
+    // Low score (40%) does NOT count as mastered
+    state = recordLessonResult(state, 'w1d1', { shadowingBest: 40 }, '2026-11-24');
+    expect(computeTrackStats(state, SAMPLE_LESSONS).finance.completed).toBe(0);
+
+    // Passing score (80%) counts as mastered
     state = recordLessonResult(state, 'w1d1', { shadowingBest: 80 }, '2026-11-24');
     const stats = computeTrackStats(state, SAMPLE_LESSONS);
     expect(stats.finance).toEqual({ completed: 1, total: 1, percent: 100 });

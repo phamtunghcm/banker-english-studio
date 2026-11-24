@@ -2,11 +2,13 @@ import type {
   Lesson,
   LessonRecord,
   RankTitle,
+  SavedWord,
   Track,
   UserProgress,
 } from '../types/curriculum';
 
 export const STORAGE_KEY = 'banker_english_studio_v1';
+export const MASTERY_THRESHOLD = 75;
 
 const RANK_LADDER: RankTitle[] = [
   'Analyst (B1)',
@@ -24,6 +26,8 @@ export function createInitialProgress(): UserProgress {
     lastActiveDate: null,
     completedLessons: {},
     weeklyTestScores: {},
+    savedWords: [],
+    customLessons: [],
   };
 }
 
@@ -50,7 +54,12 @@ export function loadProgress(): UserProgress {
     if (!raw) return createInitialProgress();
     const parsed: unknown = JSON.parse(raw);
     if (!isValidProgressShape(parsed)) return createInitialProgress();
-    return parsed;
+    return {
+      ...createInitialProgress(),
+      ...parsed,
+      savedWords: Array.isArray(parsed.savedWords) ? parsed.savedWords : [],
+      customLessons: Array.isArray(parsed.customLessons) ? parsed.customLessons : [],
+    };
   } catch {
     return createInitialProgress();
   }
@@ -77,6 +86,15 @@ function computeNextStreak(lastActive: string | null, currentStreak: number, tod
   const diffDays = Math.round((todayMs - prevMs) / 86_400_000);
 
   return diffDays === 1 ? currentStreak + 1 : 1;
+}
+
+export function isLessonMastered(record?: LessonRecord): boolean {
+  if (!record) return false;
+  return (
+    record.shadowingBest >= MASTERY_THRESHOLD ||
+    record.dictationBest >= MASTERY_THRESHOLD ||
+    record.clozeCompleted
+  );
 }
 
 export function recordLessonResult(
@@ -113,7 +131,7 @@ export function recordWeeklyTestResult(
   dateOverride?: string
 ): UserProgress {
   const today = dateOverride ?? getTodayIso();
-  const passed = score >= 75;
+  const passed = score >= MASTERY_THRESHOLD;
   const prevScore = progress.weeklyTestScores[week]?.score ?? 0;
   const prevPassed = progress.weeklyTestScores[week]?.passed ?? false;
 
@@ -146,7 +164,9 @@ export function computeTrackStats(
   for (const track of tracks) {
     const trackLessons = lessons.filter((l) => l.track === track);
     const total = trackLessons.length;
-    const completed = trackLessons.filter((l) => Boolean(progress.completedLessons[l.id])).length;
+    const completed = trackLessons.filter((l) =>
+      isLessonMastered(progress.completedLessons[l.id])
+    ).length;
     result[track] = {
       completed,
       total,
@@ -154,6 +174,43 @@ export function computeTrackStats(
     };
   }
   return result;
+}
+
+export function toggleSavedWord(
+  progress: UserProgress,
+  word: string,
+  contextSentence: string,
+  lessonId: string
+): UserProgress {
+  const cleanWord = word.replace(/^[^\w]+|[^\w]+$/g, '');
+  if (!cleanWord) return progress;
+
+  const current = progress.savedWords ?? [];
+  const exists = current.some((w) => w.word.toLowerCase() === cleanWord.toLowerCase());
+  const nextWords: SavedWord[] = exists
+    ? current.filter((w) => w.word.toLowerCase() !== cleanWord.toLowerCase())
+    : [
+        {
+          word: cleanWord,
+          contextSentence,
+          lessonId,
+          addedAt: getTodayIso(),
+        },
+        ...current,
+      ];
+
+  return {
+    ...progress,
+    savedWords: nextWords,
+  };
+}
+
+export function addCustomLesson(progress: UserProgress, lesson: Lesson): UserProgress {
+  const current = progress.customLessons ?? [];
+  return {
+    ...progress,
+    customLessons: [lesson, ...current],
+  };
 }
 
 export function exportProgressJson(progress: UserProgress): string {
@@ -164,7 +221,12 @@ export function importProgressJson(raw: string): UserProgress | null {
   try {
     const parsed: unknown = JSON.parse(raw);
     if (!isValidProgressShape(parsed)) return null;
-    return parsed;
+    return {
+      ...createInitialProgress(),
+      ...parsed,
+      savedWords: Array.isArray(parsed.savedWords) ? parsed.savedWords : [],
+      customLessons: Array.isArray(parsed.customLessons) ? parsed.customLessons : [],
+    };
   } catch {
     return null;
   }

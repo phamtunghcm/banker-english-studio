@@ -4,6 +4,12 @@ export interface SpeechCallbacks {
   onError?: () => void;
 }
 
+export interface VoiceOption {
+  voiceURI: string;
+  name: string;
+  lang: string;
+}
+
 interface SpeechRecognitionAlternativeLike {
   transcript: string;
 }
@@ -30,12 +36,13 @@ interface SpeechRecognitionLike {
 
 type SpeechRecognitionCtor = new () => SpeechRecognitionLike;
 
-let activeTimer: ReturnType<typeof setInterval> | null = null;
+let activeTimer: ReturnType<typeof setTimeout> | null = null;
 let activeRecognition: SpeechRecognitionLike | null = null;
+let cachedVoices: SpeechSynthesisVoice[] = [];
 
 function clearWordTimer() {
   if (activeTimer !== null) {
-    clearInterval(activeTimer);
+    clearTimeout(activeTimer);
     activeTimer = null;
   }
 }
@@ -51,18 +58,78 @@ export function stopSpeaking(): void {
   }
 }
 
-function selectPreferredEnglishVoice(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | null {
-  const english = voices.filter((v) => v.lang.startsWith('en'));
-  if (english.length === 0) return null;
-  const preferredNames = ['Samantha', 'Daniel', 'Karen', 'Google US English', 'Google UK English'];
-  for (const name of preferredNames) {
-    const found = english.find((v) => v.name.includes(name));
-    if (found) return found;
+function loadRawVoices(): SpeechSynthesisVoice[] {
+  if (typeof window === 'undefined' || !('speechSynthesis' in window)) return [];
+  const list = window.speechSynthesis.getVoices?.() ?? [];
+  if (list.length > 0) {
+    cachedVoices = list;
   }
-  return english.find((v) => v.lang === 'en-US') ?? english[0];
+  return cachedVoices;
 }
 
-export function speakSentence(text: string, rate = 1.0, callbacks: SpeechCallbacks = {}): void {
+if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+  loadRawVoices();
+  window.speechSynthesis.onvoiceschanged = () => {
+    loadRawVoices();
+  };
+}
+
+const EXPRESSIVE_FEMALE_PRIORITY = [
+  'Ava (Premium)',
+  'Ava',
+  'Samantha (Enhanced)',
+  'Allison',
+  'Microsoft Aria',
+  'Google US English',
+  'Google UK English Female',
+  'Serena',
+  'Karen',
+  'Samantha',
+  'Victoria',
+];
+
+function scoreVoiceExpressiveness(voice: SpeechSynthesisVoice): number {
+  const idx = EXPRESSIVE_FEMALE_PRIORITY.findIndex((p) => voice.name.includes(p));
+  if (idx !== -1) return 100 - idx;
+  if (/natural|neural|premium|enhanced/i.test(voice.name)) return 75;
+  if (/female|woman/i.test(voice.name)) return 60;
+  if (voice.lang === 'en-US') return 40;
+  return 20;
+}
+
+export function getAvailableEnglishVoices(): VoiceOption[] {
+  const english = loadRawVoices().filter((v) => v.lang.startsWith('en'));
+  const sorted = [...english].sort(
+    (a, b) => scoreVoiceExpressiveness(b) - scoreVoiceExpressiveness(a)
+  );
+  return sorted.map((v) => ({
+    voiceURI: v.voiceURI,
+    name: v.name,
+    lang: v.lang,
+  }));
+}
+
+function selectPreferredEnglishVoice(
+  voices: SpeechSynthesisVoice[],
+  preferredURI?: string
+): SpeechSynthesisVoice | null {
+  const english = voices.filter((v) => v.lang.startsWith('en'));
+  if (english.length === 0) return null;
+  if (preferredURI) {
+    const exact = english.find((v) => v.voiceURI === preferredURI);
+    if (exact) return exact;
+  }
+  return [...english].sort(
+    (a, b) => scoreVoiceExpressiveness(b) - scoreVoiceExpressiveness(a)
+  )[0];
+}
+
+export function speakSentence(
+  text: string,
+  rate = 1.0,
+  callbacks: SpeechCallbacks = {},
+  voiceURI?: string
+): void {
   stopSpeaking();
   const words = text.trim().split(/\s+/).filter(Boolean);
   if (words.length === 0) {
@@ -70,27 +137,29 @@ export function speakSentence(text: string, rate = 1.0, callbacks: SpeechCallbac
     return;
   }
 
-  // Fallback timer ensures word highlight advances smoothly even if browser doesn't fire onboundary
-  let fallbackIndex = 0;
   let boundarySeen = false;
-  const msPerWord = Math.max(180, Math.round(330 / rate));
-
   callbacks.onWordIndex?.(0);
-  activeTimer = setInterval(() => {
-    if (boundarySeen) return;
-    fallbackIndex++;
-    if (fallbackIndex < words.length) {
-      callbacks.onWordIndex?.(fallbackIndex);
-    } else {
-      clearWordTimer();
-    }
-  }, msPerWord);
+
+  // Length-aware fallback timer so short & long banking terms stay in sync
+  const scheduleFallbackWord = (idx: number) => {
+    if (boundarySeen || idx >= words.length) return;
+    callbacks.onWordIndex?.(idx);
+    const wordDuration = Math.max(170, Math.round((130 + words[idx].length * 36) / rate));
+    activeTimer = setTimeout(() => {
+      scheduleFallbackWord(idx + 1);
+    }, wordDuration);
+  };
+  scheduleFallbackWord(0);
 
   if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
-    setTimeout(() => {
+    const totalMs = words.reduce(
+      (sum, w) => sum + Math.max(170, Math.round((130 + w.length * 36) / rate)),
+      0
+    );
+    activeTimer = setTimeout(() => {
       clearWordTimer();
       callbacks.onEnd?.();
-    }, words.length * msPerWord);
+    }, totalMs);
     return;
   }
 
@@ -98,13 +167,14 @@ export function speakSentence(text: string, rate = 1.0, callbacks: SpeechCallbac
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = 'en-US';
     utterance.rate = rate;
-    const voices = window.speechSynthesis.getVoices?.() ?? [];
-    const voice = selectPreferredEnglishVoice(voices);
+    utterance.pitch = 1.03; // Warm, expressive female intonation
+    const voice = selectPreferredEnglishVoice(loadRawVoices(), voiceURI);
     if (voice) utterance.voice = voice;
 
     utterance.onboundary = (event: SpeechSynthesisEvent) => {
       if (typeof event.charIndex === 'number') {
         boundarySeen = true;
+        clearWordTimer();
         const prefix = text.slice(0, event.charIndex).trim();
         const wordIdx = prefix ? prefix.split(/\s+/).length : 0;
         callbacks.onWordIndex?.(Math.min(wordIdx, words.length - 1));

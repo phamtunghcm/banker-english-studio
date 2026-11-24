@@ -1,8 +1,14 @@
-import { useState } from 'react';
-import { ArrowLeft, CheckCircle2, Trophy, Volume2 } from 'lucide-react';
-import type { Lesson, WeeklyTest } from '../types/curriculum';
+import { useEffect, useState } from 'react';
+import { ArrowLeft, CheckCircle2, Mic, MicOff, Trophy, Volume2 } from 'lucide-react';
+import type { Lesson, WeeklyTest, WordScoreResult } from '../types/curriculum';
 import { scoreWordAlignment } from '../utils/wordScoring';
-import { speakSentence } from '../utils/speechEngine';
+import {
+  isSpeechRecognitionSupported,
+  speakSentence,
+  startListening,
+  stopListening,
+  stopSpeaking,
+} from '../utils/speechEngine';
 
 interface WeeklyTestViewProps {
   test: WeeklyTest;
@@ -20,20 +26,70 @@ export function WeeklyTestView({
   const [vocabAnswers, setVocabAnswers] = useState<Record<string, number>>({});
   const [listeningInput, setListeningInput] = useState('');
   const [shadowInput, setShadowInput] = useState('');
+  const [isRecording, setIsRecording] = useState(false);
+  const [micError, setMicError] = useState<string | null>(null);
+  const [shadowPreview, setShadowPreview] = useState<{
+    words: WordScoreResult[];
+    accuracy: number;
+  } | null>(null);
   const [submittedScore, setSubmittedScore] = useState<number | null>(null);
 
   const targetSentence = listeningLesson.sentences[0];
+  const micSupported = isSpeechRecognitionSupported();
+
+  useEffect(() => {
+    return () => {
+      stopSpeaking();
+      stopListening();
+    };
+  }, []);
+
+  const handleToggleMic = () => {
+    if (isRecording) {
+      stopListening();
+      setIsRecording(false);
+      setShadowPreview(scoreWordAlignment(targetSentence.en, shadowInput));
+      return;
+    }
+
+    stopSpeaking();
+    setMicError(null);
+    setShadowInput('');
+    let latest = '';
+
+    const started = startListening(
+      (transcript) => {
+        latest = transcript;
+        setShadowInput(transcript);
+      },
+      (err) => {
+        setMicError(err);
+        setIsRecording(false);
+      },
+      () => {
+        setIsRecording(false);
+        if (latest.trim()) {
+          setShadowPreview(scoreWordAlignment(targetSentence.en, latest));
+        }
+      }
+    );
+
+    if (started) setIsRecording(true);
+  };
 
   const handleSubmit = () => {
+    stopSpeaking();
+    stopListening();
     let vocabCorrect = 0;
     for (const q of test.vocabQuestions) {
       if (vocabAnswers[q.id] === q.answerIndex) vocabCorrect++;
     }
     const vocabPct = (vocabCorrect / test.vocabQuestions.length) * 100;
     const listenPct = scoreWordAlignment(targetSentence.en, listeningInput).accuracy;
-    const shadowPct = scoreWordAlignment(targetSentence.en, shadowInput).accuracy;
+    const shadowEval = scoreWordAlignment(targetSentence.en, shadowInput);
+    setShadowPreview(shadowEval);
 
-    const totalScore = Math.round(vocabPct * 0.4 + listenPct * 0.3 + shadowPct * 0.3);
+    const totalScore = Math.round(vocabPct * 0.4 + listenPct * 0.3 + shadowEval.accuracy * 0.3);
     setSubmittedScore(totalScore);
     onFinish(totalScore);
   };
@@ -43,7 +99,11 @@ export function WeeklyTestView({
       <div className="flex items-center justify-between">
         <button
           type="button"
-          onClick={onBack}
+          onClick={() => {
+            stopSpeaking();
+            stopListening();
+            onBack();
+          }}
           className="inline-flex items-center gap-2 rounded-lg border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-800"
         >
           <ArrowLeft className="h-4 w-4" />
@@ -102,8 +162,8 @@ export function WeeklyTestView({
             Nghe câu thi
           </button>
         </div>
-        <input
-          type="text"
+        <textarea
+          rows={2}
           value={listeningInput}
           onChange={(e) => setListeningInput(e.target.value)}
           placeholder="Gõ lại chính xác câu vừa nghe..."
@@ -111,27 +171,72 @@ export function WeeklyTestView({
         />
       </div>
 
-      {/* Part 3: Speaking Check */}
-      <div className="space-y-2 rounded-xl border border-slate-800 bg-slate-950 p-4">
-        <h2 className="text-sm font-semibold text-emerald-400">
-          Phần 3: Đọc lại câu chuẩn (30%)
-        </h2>
+      {/* Part 3: Speaking Check with Mic + Word Scoring */}
+      <div className="space-y-3 rounded-xl border border-slate-800 bg-slate-950 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold text-emerald-400">
+            Phần 3: Đọc lại câu chuẩn — Chấm từng chữ (30%)
+          </h2>
+          {micSupported && (
+            <button
+              type="button"
+              onClick={handleToggleMic}
+              className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold ${
+                isRecording
+                  ? 'animate-pulse bg-rose-500 text-white'
+                  : 'bg-emerald-500 text-slate-950 hover:bg-emerald-400'
+              }`}
+            >
+              {isRecording ? <MicOff className="h-3.5 w-3.5" /> : <Mic className="h-3.5 w-3.5" />}
+              {isRecording ? 'Dừng thu âm' : 'Nói bằng Micro'}
+            </button>
+          )}
+        </div>
+
         <p className="text-sm text-slate-300">{targetSentence.en}</p>
-        <input
-          type="text"
+
+        {micError && (
+          <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-xs text-amber-300">
+            {micError}
+          </p>
+        )}
+
+        <textarea
+          rows={2}
           value={shadowInput}
           onChange={(e) => setShadowInput(e.target.value)}
-          placeholder="Nhập hoặc dùng voice dictation của hệ thống để đọc lại câu trên..."
+          placeholder="Bấm Micro để nói hoặc nhập transcript kiểm tra..."
           className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white focus:border-emerald-500 focus:outline-none"
         />
+
+        {shadowPreview && (
+          <div className="flex flex-wrap gap-1.5 pt-1">
+            {shadowPreview.words.map((w, i) => (
+              <span
+                key={`wt-sh-${i}`}
+                className={`rounded-md border px-2 py-0.5 text-xs font-medium ${
+                  w.status === 'correct'
+                    ? 'border-emerald-500/40 bg-emerald-500/20 text-emerald-300'
+                    : w.status === 'near'
+                      ? 'border-amber-500/40 bg-amber-500/20 text-amber-300'
+                      : 'border-rose-500/40 bg-rose-500/20 text-rose-300 line-through'
+                }`}
+              >
+                {w.expected}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
 
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         {submittedScore !== null ? (
           <div className="inline-flex items-center gap-2 text-sm font-bold text-amber-300">
             <CheckCircle2 className="h-5 w-5" />
             Điểm tổng kết: {submittedScore}% —{' '}
-            {submittedScore >= test.passingScore ? 'ĐẠT & THĂNG HẠNG!' : 'Chưa đạt 75%, hãy thử lại!'}
+            {submittedScore >= test.passingScore
+              ? 'ĐẠT & THĂNG HẠNG!'
+              : 'Chưa đạt 75%, hãy thử lại!'}
           </div>
         ) : (
           <span />

@@ -4,6 +4,7 @@ export interface PlacementQuestion {
   id: string;
   track: Track;
   prompt: string;
+  audioText?: string;
   options: string[];
   answerIndex: number;
 }
@@ -66,6 +67,19 @@ export const PLACEMENT_QUESTIONS: PlacementQuestion[] = [
       'Increase branch operating expenses',
       'Issue subordinated debt automatically',
       'Replace mutual TLS encryption',
+    ],
+    answerIndex: 0,
+  },
+  {
+    id: 'pl-6',
+    track: 'finance',
+    prompt: 'Nghe đoạn hội thoại ngắn (không phụ đề) và chọn ý đúng nhất:',
+    audioText: 'Lower funding costs from retail CASA deposits drove most of our net interest margin gain this quarter.',
+    options: [
+      'Retail CASA deposits lowered funding costs and boosted NIM',
+      'Higher NPL ratios improved net interest margin',
+      'Branch operating expenses doubled this quarter',
+      'Corporate loans were suspended for the quarter',
     ],
     answerIndex: 0,
   },
