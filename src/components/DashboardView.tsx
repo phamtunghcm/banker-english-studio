@@ -32,10 +32,10 @@ const WEEK_TITLES: Record<1 | 2 | 3 | 4, string> = {
   4: 'Tuần 4: Giao tiếp & Thuyết trình Cấp cao',
 };
 
-const TRACK_META: Record<Track, { label: string; color: string; icon: typeof Landmark }> = {
-  finance: { label: 'Tài chính (Finance)', color: 'bg-emerald-500', icon: Landmark },
-  credit: { label: 'Tín dụng (Credit)', color: 'bg-amber-500', icon: ShieldCheck },
-  tech: { label: 'Công nghệ (Banking Tech)', color: 'bg-sky-500', icon: Cpu },
+const TRACK_META: Record<Track, { label: string; shortLabel: string; color: string; icon: typeof Landmark }> = {
+  finance: { label: 'Tài chính (Finance)', shortLabel: 'Tài chính', color: 'bg-emerald-500', icon: Landmark },
+  credit: { label: 'Tín dụng (Credit)', shortLabel: 'Tín dụng', color: 'bg-amber-500', icon: ShieldCheck },
+  tech: { label: 'Công nghệ (Banking Tech)', shortLabel: 'Công nghệ', color: 'bg-sky-500', icon: Cpu },
 };
 
 export function DashboardView({
@@ -234,7 +234,7 @@ export function DashboardView({
                       Ngày {lesson.day}
                     </span>
                     <span className="rounded-md bg-slate-800 px-2 py-0.5 text-[11px] text-slate-300">
-                      {meta.label.split(' ')[0]}
+                      {meta.shortLabel}
                     </span>
                   </div>
                   <h3 className="mt-2 font-semibold text-white">{lesson.title}</h3>
