@@ -361,8 +361,17 @@ export function LessonPlayer({
         setSpokenText(transcript);
       },
       (err) => {
-        setMicError(err);
         setIsRecording(false);
+        if (err === 'NETWORK_BLOCKED') {
+          setMicError(
+            'Trình duyệt hiện tại chặn máy chủ Speech-to-Text (lỗi network). Đã tự bật Ghi âm cục bộ bên cạnh — bạn có thể nghe đối chiếu giọng mình hoặc nhấn đúp phím Fn (Mac) / 🎤 trên bàn phím (iPhone) vào ô dưới để chấm từng chữ tự động!'
+          );
+          if (voiceRecorderSupported) {
+            void handleToggleVoiceMemo();
+          }
+        } else {
+          setMicError(err);
+        }
       },
       () => {
         setIsRecording(false);
@@ -425,7 +434,7 @@ export function LessonPlayer({
     : 0;
 
   return (
-    <div className="mx-auto max-w-4xl space-y-5">
+    <div className="mx-auto max-w-2xl space-y-4">
       {/* Header & Top Audio Stage */}
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">

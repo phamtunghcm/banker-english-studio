@@ -311,7 +311,7 @@ export function formatSpeechError(code?: string): string | null {
     case 'audio-capture':
       return 'Không tìm thấy Micro hoặc Micro đang được ứng dụng khác chiếm dụng.';
     case 'network':
-      return 'Kết nối tới dịch vụ nhận diện giọng nói bị gián đoạn. Hãy thử lại hoặc dùng Chrome.';
+      return 'NETWORK_BLOCKED';
     default:
       return `Lỗi micro (${code}). Nếu đang dùng Safari, hãy thử bật Dictation trong cài đặt hệ thống hoặc dùng Chrome.`;
   }
