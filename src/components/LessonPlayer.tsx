@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ArrowLeft,
   Bookmark,
@@ -26,15 +26,20 @@ import {
 } from '../utils/wordScoring';
 import {
   analyzePronunciation,
+  buildKaraokeReport,
   type PronunciationReport,
 } from '../utils/pronunciationCoach';
 import {
+  buildKaraokeSchedule,
+  evaluateKaraokeWord,
+  startKaraokeMicSession,
+  type KaraokeMicHandle,
+} from '../utils/karaokeRecorder';
+import {
   CURATED_FEMALE_VOICES,
   isSpeechRecognitionSupported,
-  isVoiceRecorderSupported,
   speakSentence,
   startListening,
-  startVoiceRecording,
   stopListening,
   stopSpeaking,
   stopVoiceRecording,
@@ -169,9 +174,13 @@ export function LessonPlayer({
   const [noSub, setNoSub] = useState(false);
   const [showVi, setShowVi] = useState(true);
 
-  // Shadowing state
-  const [isRecording, setIsRecording] = useState(false);
-  const [isVoiceMemoRecording, setIsVoiceMemoRecording] = useState(false);
+  // Karaoke Shadowing state (real Web Audio mic + live karaoke word cursor)
+  const [isKaraokeRunning, setIsKaraokeRunning] = useState(false);
+  const [karaokeWordIdx, setKaraokeWordIdx] = useState<number>(-1);
+  const [karaokeLiveStatuses, setKaraokeLiveStatuses] = useState<
+    Record<number, 'correct' | 'near' | 'missing'>
+  >({});
+  const [micLevel, setMicLevel] = useState(0);
   const [recordedAudioUrl, setRecordedAudioUrl] = useState<string | null>(null);
   const [recordingFixWord, setRecordingFixWord] = useState<string | null>(null);
   const [fixedWords, setFixedWords] = useState<Record<string, boolean>>({});
@@ -180,6 +189,10 @@ export function LessonPlayer({
   const [shadowingResults, setShadowingResults] = useState<
     Record<string, PronunciationReport>
   >({});
+
+  const karaokeMicRef = useRef<KaraokeMicHandle | null>(null);
+  const karaokeRafRef = useRef<number | null>(null);
+  const karaokeTranscriptRef = useRef<string>('');
 
   // Dictation state
   const [dictationInputs, setDictationInputs] = useState<Record<string, string>>({});
@@ -193,16 +206,50 @@ export function LessonPlayer({
 
   const currentSentence = lesson.sentences[activeSentenceIdx] ?? lesson.sentences[0];
   const micSupported = isSpeechRecognitionSupported();
-  const voiceRecorderSupported = isVoiceRecorderSupported();
   const currentShadowResult = shadowingResults[currentSentence.id] ?? null;
   const currentDictInput = dictationInputs[currentSentence.id] ?? '';
   const currentDictResult = dictationResults[currentSentence.id] ?? null;
+
+  const stopKaraokeSession = async (finalize = false, peaks?: number[]) => {
+    if (karaokeRafRef.current !== null) {
+      cancelAnimationFrame(karaokeRafRef.current);
+      karaokeRafRef.current = null;
+    }
+    stopListening(true);
+    setIsKaraokeRunning(false);
+    setMicLevel(0);
+
+    const handle = karaokeMicRef.current;
+    karaokeMicRef.current = null;
+    if (handle) {
+      const url = await handle.stop();
+      if (url) {
+        setRecordedAudioUrl((prev) => {
+          if (prev) URL.revokeObjectURL(prev);
+          return url;
+        });
+      }
+    }
+
+    if (finalize && peaks) {
+      const finalStatuses = peaks.map((p) => evaluateKaraokeWord(p));
+      const report = buildKaraokeReport(
+        currentSentence.en,
+        finalStatuses,
+        karaokeTranscriptRef.current
+      );
+      setShadowingResults((prev) => ({ ...prev, [currentSentence.id]: report }));
+      onComplete({ shadowingScore: report.accuracy });
+    }
+    setKaraokeWordIdx(-1);
+  };
 
   useEffect(() => {
     return () => {
       stopSpeaking();
       stopListening(true);
       stopVoiceRecording();
+      void stopKaraokeSession(false);
     };
   }, []);
 
@@ -210,9 +257,8 @@ export function LessonPlayer({
     stopSpeaking();
     stopListening(true);
     stopVoiceRecording();
+    void stopKaraokeSession(false);
     setIsPlaying(false);
-    setIsRecording(false);
-    setIsVoiceMemoRecording(false);
     setRecordingFixWord(null);
     setActiveWordIdx(null);
   };
@@ -238,7 +284,6 @@ export function LessonPlayer({
     }
 
     stopListening(true);
-    setIsRecording(false);
     setActiveSentenceIdx(index);
     setIsPlaying(true);
     setActiveWordIdx(0);
@@ -293,29 +338,81 @@ export function LessonPlayer({
     onComplete({ shadowingScore: report.accuracy });
   };
 
-  const handleToggleVoiceMemo = async () => {
-    if (isVoiceMemoRecording) {
-      stopVoiceRecording();
-      setIsVoiceMemoRecording(false);
+  const handleStartKaraoke = async () => {
+    if (isKaraokeRunning) {
+      await stopKaraokeSession(false);
       return;
     }
+
     stopSpeaking();
-    stopListening(true);
-    setIsRecording(false);
+    setIsPlaying(false);
     setMicError(null);
-    const ok = await startVoiceRecording(
-      (url) => {
-        setRecordedAudioUrl((prev) => {
-          if (prev) URL.revokeObjectURL(prev);
-          return url;
-        });
-      },
-      (err) => {
-        setMicError(err);
-        setIsVoiceMemoRecording(false);
+    setKaraokeLiveStatuses({});
+    karaokeTranscriptRef.current = '';
+
+    try {
+      const micHandle = await startKaraokeMicSession();
+      karaokeMicRef.current = micHandle;
+      setIsKaraokeRunning(true);
+
+      // Optional background speech recognition (silently ignored if Safari/WebView blocks it)
+      if (micSupported) {
+        startListening(
+          (transcript) => {
+            karaokeTranscriptRef.current = transcript;
+            setSpokenText(transcript);
+          },
+          () => {
+            // Silently rely on Web Audio karaoke level — never break the karaoke flow!
+          },
+          () => {}
+        );
       }
-    );
-    if (ok) setIsVoiceMemoRecording(true);
+
+      const schedule = buildKaraokeSchedule(currentSentence.en, rate);
+      const totalMs = schedule[schedule.length - 1]?.endMs ?? 2500;
+      const wordPeaks = new Array<number>(schedule.length).fill(0);
+      const startTime = performance.now();
+
+      const tick = () => {
+        if (!karaokeMicRef.current) return;
+        const elapsed = performance.now() - startTime;
+        const level = karaokeMicRef.current.getLevel();
+        setMicLevel(level);
+
+        const currentSlot =
+          schedule.find((s) => elapsed >= s.startMs && elapsed < s.endMs) ??
+          schedule[schedule.length - 1];
+
+        if (currentSlot) {
+          setKaraokeWordIdx(currentSlot.index);
+          if (level > wordPeaks[currentSlot.index]) {
+            wordPeaks[currentSlot.index] = level;
+          }
+          // Live colorize completed words as cursor moves past them
+          const liveMap: Record<number, 'correct' | 'near' | 'missing'> = {};
+          for (let i = 0; i < currentSlot.index; i++) {
+            liveMap[i] = evaluateKaraokeWord(wordPeaks[i]);
+          }
+          setKaraokeLiveStatuses(liveMap);
+        }
+
+        if (elapsed >= totalMs + 250) {
+          void stopKaraokeSession(true, wordPeaks);
+          return;
+        }
+        karaokeRafRef.current = requestAnimationFrame(tick);
+      };
+
+      karaokeRafRef.current = requestAnimationFrame(tick);
+    } catch (err) {
+      setMicError(
+        err instanceof Error
+          ? err.message
+          : 'Không thể bật Micro. Vui lòng cho phép truy cập Micro trong Safari/Trình duyệt.'
+      );
+      setIsKaraokeRunning(false);
+    }
   };
 
   const handlePracticeSingleWord = (sentenceId: string, cleanWord: string) => {
@@ -327,7 +424,6 @@ export function LessonPlayer({
     }
     stopSpeaking();
     setIsPlaying(false);
-    setIsRecording(false);
     setMicError(null);
     let latest = '';
 
@@ -339,7 +435,7 @@ export function LessonPlayer({
         setRecordingFixWord(null);
         if (err === 'NETWORK_BLOCKED') {
           setMicError(
-            `Trình duyệt chặn máy chủ Speech-to-Text (network). Hãy bấm "Nghe chậm 0.75x" rồi tự đọc lại từ "${cleanWord}" hoặc dùng Ghi âm nghe lại!`
+            `Trình duyệt chặn Speech-to-Text (network). Hãy bấm "Nghe chậm 0.75x" rồi dùng nút Karaoke ở trên để luyện nhịp & nghe lại giọng mình!`
           );
         } else {
           setMicError(err);
@@ -358,55 +454,6 @@ export function LessonPlayer({
       }
     );
     if (started) setRecordingFixWord(key);
-  };
-
-  const handleToggleMic = () => {
-    if (isRecording) {
-      stopListening(false);
-      setIsRecording(false);
-      if (spokenText.trim()) {
-        handleScoreShadowing(spokenText);
-      }
-      return;
-    }
-
-    stopSpeaking();
-    stopVoiceRecording();
-    setIsVoiceMemoRecording(false);
-    setIsPlaying(false);
-    setMicError(null);
-    setSpokenText('');
-    let latestTranscript = '';
-
-    const started = startListening(
-      (transcript) => {
-        latestTranscript = transcript;
-        setSpokenText(transcript);
-      },
-      (err) => {
-        setIsRecording(false);
-        if (err === 'NETWORK_BLOCKED') {
-          setMicError(
-            'Trình duyệt chặn máy chủ Speech-to-Text (lỗi network). Đã tự bật Ghi âm cục bộ — hoặc nhấn đúp phím Fn (Mac) / 🎤 trên bàn phím (iPhone) vào ô dưới để chấm từng chữ!'
-          );
-          if (voiceRecorderSupported) {
-            void handleToggleVoiceMemo();
-          }
-        } else {
-          setMicError(err);
-        }
-      },
-      () => {
-        setIsRecording(false);
-        if (latestTranscript.trim()) {
-          handleScoreShadowing(latestTranscript);
-        }
-      }
-    );
-
-    if (started) {
-      setIsRecording(true);
-    }
   };
 
   const handleCheckDictation = () => {
@@ -738,27 +785,57 @@ export function LessonPlayer({
             />
           </div>
 
-          {/* Clickable word-by-word sentence card */}
+          {/* Live Karaoke Sentence Stage */}
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-            <p className="text-base font-bold leading-relaxed text-slate-900">
-              {currentSentence.en.split(/\s+/).map((word, idx) => (
-                <button
-                  key={`sh-word-${idx}`}
-                  type="button"
-                  onClick={() => handleSpeakSingleWord(word, false)}
-                  className="mr-1.5 inline-block rounded px-0.5 hover:bg-sky-100 hover:text-sky-900"
-                  title={`Bấm để nghe từ "${word}"`}
-                >
-                  {word}
-                </button>
-              ))}
+            <p className="text-lg font-extrabold leading-relaxed text-slate-900">
+              {currentSentence.en.split(/\s+/).map((word, idx) => {
+                const isActiveKaraoke = isKaraokeRunning && karaokeWordIdx === idx;
+                const liveStatus = karaokeLiveStatuses[idx];
+                const colorClass = isActiveKaraoke
+                  ? 'scale-105 bg-amber-200 text-amber-950 border-b-2 border-amber-600'
+                  : liveStatus === 'correct'
+                    ? 'bg-emerald-100 text-emerald-900'
+                    : liveStatus === 'near'
+                      ? 'bg-amber-100 text-amber-900'
+                      : liveStatus === 'missing'
+                        ? 'bg-rose-100 text-rose-800 line-through'
+                        : 'text-slate-900 hover:bg-sky-100 hover:text-sky-900';
+
+                return (
+                  <button
+                    key={`sh-word-${idx}`}
+                    type="button"
+                    onClick={() => handleSpeakSingleWord(word, false)}
+                    className={`mr-1.5 inline-block rounded px-1 py-0.5 transition-all ${colorClass}`}
+                    title={`Bấm để nghe từ "${word}"`}
+                  >
+                    {word}
+                  </button>
+                );
+              })}
             </p>
             {showVi && (
-              <p className="mt-1 text-xs font-medium text-slate-600">{currentSentence.vi}</p>
+              <p className="mt-1.5 text-xs font-medium text-slate-600">{currentSentence.vi}</p>
+            )}
+
+            {/* Live Microphone Waveform Meter */}
+            {isKaraokeRunning && (
+              <div className="mt-3 space-y-1">
+                <div className="flex items-center justify-between text-[11px] font-bold text-emerald-800">
+                  <span>🎤 Đọc theo chữ đang sáng màu vàng...</span>
+                  <span>Âm lượng mic: {Math.round(micLevel * 100)}%</span>
+                </div>
+                <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-200">
+                  <div
+                    className="h-full bg-emerald-500 transition-all duration-75"
+                    style={{ width: `${Math.max(4, Math.round(micLevel * 100))}%` }}
+                  />
+                </div>
+              </div>
             )}
           </div>
 
-          {/* Primary Mic + Audio Actions */}
+          {/* Primary Karaoke + Sample Actions */}
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
@@ -769,40 +846,23 @@ export function LessonPlayer({
               Nghe mẫu
             </button>
 
-            {micSupported && (
-              <button
-                type="button"
-                onClick={handleToggleMic}
-                className={`inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold ${
-                  isRecording
-                    ? 'animate-pulse bg-rose-600 text-white'
-                    : 'bg-emerald-600 text-white hover:bg-emerald-700'
-                }`}
-              >
-                {isRecording ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-                {isRecording ? 'Dừng & Chấm' : 'Bấm nói chấm điểm'}
-              </button>
-            )}
-
-            {voiceRecorderSupported && (
-              <button
-                type="button"
-                onClick={() => void handleToggleVoiceMemo()}
-                className={`inline-flex items-center gap-1.5 rounded-xl border px-3.5 py-2 text-xs font-bold ${
-                  isVoiceMemoRecording
-                    ? 'animate-pulse border-rose-600 bg-rose-50 text-rose-800'
-                    : 'border-slate-300 bg-white text-slate-800 hover:bg-slate-100'
-                }`}
-              >
-                {isVoiceMemoRecording ? <MicOff className="h-3.5 w-3.5" /> : <Mic className="h-3.5 w-3.5 text-sky-600" />}
-                {isVoiceMemoRecording ? 'Dừng ghi âm' : 'Ghi âm nghe lại'}
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={() => void handleStartKaraoke()}
+              className={`inline-flex items-center gap-1.5 rounded-xl px-5 py-2 text-xs font-extrabold shadow-sm ${
+                isKaraokeRunning
+                  ? 'animate-pulse bg-rose-600 text-white'
+                  : 'bg-emerald-600 text-white hover:bg-emerald-700'
+              }`}
+            >
+              {isKaraokeRunning ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+              {isKaraokeRunning ? 'Dừng Karaoke' : 'Bắt đầu đọc Karaoke'}
+            </button>
           </div>
 
           {recordedAudioUrl && (
-            <div className="flex items-center gap-3 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2">
-              <span className="text-xs font-bold text-sky-900">Giọng bạn:</span>
+            <div className="flex flex-wrap items-center gap-3 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2">
+              <span className="text-xs font-bold text-sky-900">So sánh giọng bạn:</span>
               <audio controls src={recordedAudioUrl} className="h-8 flex-1" />
             </div>
           )}

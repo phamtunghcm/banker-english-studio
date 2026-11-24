@@ -125,3 +125,82 @@ export function analyzePronunciation(
     issues,
   };
 }
+
+export function buildKaraokeReport(
+  expectedSentence: string,
+  wordStatuses: ('correct' | 'near' | 'missing')[],
+  spokenTranscript?: string
+): PronunciationReport {
+  // If SpeechRecognition captured actual words, blend them for richer feedback
+  const speechReport =
+    spokenTranscript && spokenTranscript.trim().length > 0
+      ? analyzePronunciation(expectedSentence, spokenTranscript)
+      : null;
+
+  const rawWords = expectedSentence.trim().split(/\s+/).filter(Boolean);
+  const words: WordScoreResult[] = rawWords.map((expected, idx) => {
+    const speechWord = speechReport?.words[idx];
+    const karaokeStatus = wordStatuses[idx] ?? 'missing';
+    const finalStatus =
+      speechWord?.status === 'correct'
+        ? 'correct'
+        : speechWord?.status === 'near'
+          ? 'near'
+          : karaokeStatus;
+
+    return {
+      expected,
+      spoken: speechWord?.spoken,
+      status: finalStatus,
+      similarity: finalStatus === 'correct' ? 1 : finalStatus === 'near' ? 0.65 : 0,
+    };
+  });
+
+  const totalWords = words.length;
+  const correctCount = words.filter((w) => w.status === 'correct').length;
+  const nearCount = words.filter((w) => w.status === 'near').length;
+  const missingCount = words.filter((w) => w.status === 'missing').length;
+  const scoreSum = correctCount + nearCount * 0.6;
+  const accuracy = totalWords === 0 ? 0 : Math.round((scoreSum / totalWords) * 100);
+  const completeness =
+    totalWords === 0 ? 0 : Math.round(((correctCount + nearCount) / totalWords) * 100);
+
+  const grade: PronunciationReport['grade'] =
+    accuracy >= 90
+      ? 'Xuất sắc'
+      : accuracy >= 75
+        ? 'Tốt'
+        : accuracy >= 55
+          ? 'Khá'
+          : 'Cần luyện lại';
+
+  const issues: PronunciationIssue[] = [];
+  words.forEach((w, index) => {
+    if (w.status === 'correct') return;
+    const cleanWord = w.expected.replace(/^[^\w]+|[^\w]+$/g, '') || w.expected;
+    issues.push({
+      index,
+      word: w.expected,
+      cleanWord,
+      spoken: w.spoken,
+      status: w.status,
+      syllables: splitSyllableHint(cleanWord),
+      tip:
+        w.status === 'near' && !w.spoken
+          ? `Âm lượng hơi nhỏ hoặc hơi trễ nhịp Karaoke ở từ "${cleanWord}" — hãy đọc to, rõ âm tiết "${splitSyllableHint(cleanWord)}".`
+          : buildCoachingTip(cleanWord, w.spoken, w.status),
+    });
+  });
+
+  return {
+    words,
+    accuracy,
+    completeness,
+    correctCount,
+    nearCount,
+    missingCount,
+    totalWords,
+    grade,
+    issues,
+  };
+}
