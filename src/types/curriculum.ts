@@ -136,6 +136,10 @@ export interface UserProgress {
   customLessons?: Lesson[];
   gameXp?: number;
   gameBest?: Partial<Record<GameId, number>>;
+  examScores?: Record<
+    string,
+    Partial<Record<'listening' | 'reading' | 'speaking' | 'writing', number>>
+  >;
 }
 
 export interface MultiProfileStore {

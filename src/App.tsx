@@ -15,6 +15,7 @@ import {
   exportProgressJson,
   importProgressJson,
   loadMultiProfileStore,
+  recordExamSkillScore,
   recordGameResult,
   recordLessonResult,
   recordWeeklyTestResult,
@@ -27,13 +28,18 @@ import { setDefaultVoicePreset } from './utils/speechEngine';
 import { OnboardingModal } from './components/OnboardingModal';
 import { DashboardView } from './components/DashboardView';
 import { LessonPlayer } from './components/LessonPlayer';
+import { InteractiveSession } from './components/InteractiveSession';
+import { ExamStudioView } from './components/ExamStudioView';
 import { WeeklyTestView } from './components/WeeklyTestView';
 import { CustomLessonModal } from './components/CustomLessonModal';
 import { ProfileManagerModal } from './components/ProfileManagerModal';
+import type { ExamId } from './data/examStudio';
 
 export function App() {
   const [store, setStore] = useState<MultiProfileStore>(() => loadMultiProfileStore());
   const [activeLesson, setActiveLesson] = useState<Lesson | null>(null);
+  const [lessonMode, setLessonMode] = useState<'interactive' | 'classic'>('interactive');
+  const [activeExam, setActiveExam] = useState<ExamId | null>(null);
   const [activeTestWeek, setActiveTestWeek] = useState<1 | 2 | 3 | 4 | null>(null);
   const [forceOnboarding, setForceOnboarding] = useState(false);
   const [showCustomModal, setShowCustomModal] = useState(false);
@@ -133,6 +139,35 @@ export function App() {
           initialLevel={progress.selectedLevel}
           onComplete={handleOnboardingComplete}
         />
+      ) : activeExam ? (
+        <ExamStudioView
+          initialExam={activeExam}
+          savedExamScores={progress.examScores}
+          onSaveSkillScore={(eId, sk, pct) =>
+            updateActiveProgress((prev) => recordExamSkillScore(prev, eId, sk, pct))
+          }
+          onBack={() => setActiveExam(null)}
+        />
+      ) : activeLesson && lessonMode === 'interactive' ? (
+        <InteractiveSession
+          lesson={activeLesson}
+          voicePreset={progress.profile.voicePreset}
+          onFinish={(res) => {
+            updateActiveProgress((prev) => {
+              let next = recordLessonResult(prev, activeLesson.id, {
+                shadowingBest: res.shadowingScore,
+                clozeCompleted: res.clozeDone,
+              });
+              if (res.xpEarned > 0) {
+                next = recordGameResult(next, 'match', res.xpEarned);
+              }
+              return next;
+            });
+            setActiveLesson(null);
+          }}
+          onSwitchToClassic={() => setLessonMode('classic')}
+          onBack={() => setActiveLesson(null)}
+        />
       ) : activeLesson ? (
         <LessonPlayer
           lesson={activeLesson}
@@ -158,7 +193,10 @@ export function App() {
               })
             );
           }}
-          onBack={() => setActiveLesson(null)}
+          onBack={() => {
+            setLessonMode('interactive');
+            setActiveLesson(null);
+          }}
         />
       ) : activeWeeklyTest && listeningLessonForTest ? (
         <WeeklyTestView
@@ -177,7 +215,11 @@ export function App() {
           lessons={CORE_LESSONS}
           electiveLessons={ELECTIVE_LESSONS}
           examLessons={EXAM_LESSONS}
-          onSelectLesson={(lesson) => setActiveLesson(lesson)}
+          onSelectLesson={(lesson) => {
+            setLessonMode('interactive');
+            setActiveLesson(lesson);
+          }}
+          onOpenExamStudio={(examId) => setActiveExam(examId)}
           onStartWeeklyTest={(week) => setActiveTestWeek(week)}
           onOpenCustomModal={() => setShowCustomModal(true)}
           onOpenProfileModal={() => setShowProfileModal(true)}

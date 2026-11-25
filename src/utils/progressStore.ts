@@ -415,6 +415,32 @@ export function recordGameResult(
   };
 }
 
+export function recordExamSkillScore(
+  progress: UserProgress,
+  examId: string,
+  skill: 'listening' | 'reading' | 'speaking' | 'writing',
+  scorePercent: number,
+  dateOverride?: string
+): UserProgress {
+  const today = dateOverride ?? getTodayIso();
+  const safeScore = Math.max(0, Math.min(100, Math.round(scorePercent)));
+  const prevExam = progress.examScores?.[examId] ?? {};
+  const prevBest = prevExam[skill] ?? 0;
+  return {
+    ...progress,
+    streakDays: computeNextStreak(progress.lastActiveDate, progress.streakDays, today),
+    lastActiveDate: today,
+    gameXp: (progress.gameXp ?? 0) + 25,
+    examScores: {
+      ...(progress.examScores ?? {}),
+      [examId]: {
+        ...prevExam,
+        [skill]: Math.max(prevBest, safeScore),
+      },
+    },
+  };
+}
+
 export function exportProgressJson(progress: UserProgress): string {
   return JSON.stringify(progress, null, 2);
 }

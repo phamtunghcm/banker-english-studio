@@ -40,6 +40,8 @@ import { CURATED_FEMALE_VOICES, speakSentence } from '../utils/speechEngine';
 import { buildPersonalRoadmap, getLessonsPerDay } from '../utils/roadmap';
 import { xpToLevel } from '../utils/games';
 import { UI_THEMES } from '../data/themes';
+import { formatExamBand } from '../utils/writingCoach';
+import type { ExamId } from '../data/examStudio';
 
 interface DashboardViewProps {
   progress: UserProgress;
@@ -47,6 +49,7 @@ interface DashboardViewProps {
   electiveLessons: Lesson[];
   examLessons?: Lesson[];
   onSelectLesson: (lesson: Lesson) => void;
+  onOpenExamStudio?: (examId: ExamId) => void;
   onStartWeeklyTest: (week: 1 | 2 | 3 | 4) => void;
   onOpenCustomModal: () => void;
   onOpenProfileModal: () => void;
@@ -115,6 +118,7 @@ export function DashboardView({
   electiveLessons,
   examLessons = [],
   onSelectLesson,
+  onOpenExamStudio,
   onStartWeeklyTest,
   onOpenCustomModal,
   onOpenProfileModal,
@@ -411,56 +415,70 @@ export function DashboardView({
 
             <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-4">
               <div className="text-xs font-semibold text-slate-600">
-                3 bước dễ học: 1. Nghe hội thoại 2 vai + Hiểu bài • 2. Nhập vai Nói AI • 3. Thử thách & Game
+                Học tương tác 5 thẻ kiểu Duolingo × ELSA: Nghe 2 vai Nam–Nữ • Quiz • Ghép câu • Điền từ • Nói AI
               </div>
               <button
                 type="button"
                 onClick={() => onSelectLesson(heroLesson)}
-                className="w-full rounded-xl bg-emerald-600 px-6 py-3 text-sm font-extrabold text-white shadow-sm hover:bg-emerald-700 sm:w-auto"
+                className="btn-tactile-emerald w-full rounded-2xl bg-emerald-600 px-6 py-3.5 text-sm font-extrabold text-white hover:bg-emerald-500 sm:w-auto"
               >
-                Bắt đầu học ngay →
+                ▶ Bắt đầu học tương tác →
               </button>
             </div>
           </div>
 
-          {/* International Exam Programs Quick Jump (IELTS / TOEFL iBT 2026 / TOEIC) */}
-          {examLessons.length > 0 && (
-            <div className="space-y-2.5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="flex items-center justify-between">
-                <h2 className="text-sm font-extrabold text-slate-900">
-                  Chương trình Luyện thi Quốc tế (Hội thoại 2 vai)
+          {/* 4-Skill Exam Practice Studio (IELTS / TOEFL iBT 2026 / TOEIC) */}
+          <div className="space-y-3 rounded-3xl border-2 border-indigo-200 bg-gradient-to-br from-indigo-50/70 via-white to-teal-50/60 p-5 shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h2 className="text-base font-extrabold text-slate-900">
+                  Phòng Luyện thi 4 Kỹ năng & Chấm Band
                 </h2>
-                <span className="text-[11px] font-bold text-indigo-700">Mới cập nhật 2026</span>
+                <p className="text-xs font-medium text-slate-600">
+                  Listening • Reading (tô sáng dẫn chứng) • Speaking (đồng hồ thi) • Writing Coach AI
+                </p>
               </div>
-              <div className="grid gap-2.5 sm:grid-cols-3">
-                {(['ielts', 'toefl', 'toeic'] as ProgramId[]).map((pid) => {
-                  const pMeta = PROGRAM_META.find((p) => p.id === pid)!;
-                  const firstExam = examLessons.find((l) => l.program === pid || l.track === pid);
-                  return (
-                    <button
-                      key={pid}
-                      type="button"
-                      onClick={() => {
-                        setActiveProgram(pid);
-                        setActiveTab('topics');
-                      }}
-                      className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-left transition hover:border-indigo-400 hover:bg-indigo-50/50"
-                    >
+              <span className="rounded-full bg-indigo-600 px-2.5 py-1 text-[10px] font-extrabold text-white">
+                CHUẨN 2026
+              </span>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-3">
+              {(['ielts', 'toefl', 'toeic'] as ExamId[]).map((eid) => {
+                const pMeta = PROGRAM_META.find((p) => p.id === eid)!;
+                const saved = progress.examScores?.[eid] ?? {};
+                const vals = Object.values(saved).filter((v): v is number => typeof v === 'number');
+                const avg = vals.length > 0 ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : null;
+                return (
+                  <div
+                    key={eid}
+                    className="flex flex-col justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+                  >
+                    <div>
                       <div className="flex items-center justify-between gap-1">
-                        <span className="text-xs font-extrabold text-slate-900">{pMeta.label}</span>
+                        <span className="text-sm font-extrabold text-slate-900">{pMeta.label}</span>
                         <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-bold text-indigo-800">
                           {pMeta.badge}
                         </span>
                       </div>
-                      <p className="mt-1 line-clamp-2 text-[11px] font-medium text-slate-600">
-                        {firstExam ? firstExam.title : pMeta.desc}
+                      <p className="mt-1 text-[11px] font-medium text-slate-600">
+                        {avg !== null
+                          ? `🏆 ${formatExamBand(eid, avg)} (${vals.length}/4 kỹ năng)`
+                          : pMeta.desc}
                       </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => onOpenExamStudio?.(eid)}
+                      className="btn-tactile-indigo w-full rounded-xl bg-indigo-600 py-2 text-xs font-extrabold text-white hover:bg-indigo-500"
+                    >
+                      Vào phòng thi 4 kỹ năng →
                     </button>
-                  );
-                })}
-              </div>
+                  </div>
+                );
+              })}
             </div>
-          )}
+          </div>
 
           {/* Up Next (Max 3 focused items) */}
           {upNextLessons.length > 0 && (

@@ -6,8 +6,10 @@ export interface SpeechCallbacks {
 
 export type TonePreset = 'expressive' | 'executive' | 'coaching';
 
+export type VoiceId = 'ava' | 'emma' | 'jenny' | 'sonia' | 'natasha' | 'andrew' | 'ryan';
+
 export interface CuratedFemaleVoice {
-  id: 'ava' | 'emma' | 'jenny' | 'sonia' | 'natasha';
+  id: VoiceId;
   label: string;
   neuralName: string;
   lang: string;
@@ -46,7 +48,9 @@ export const CURATED_FEMALE_VOICES: CuratedFemaleVoice[] = [
   },
 ];
 
-const LEGACY_VOICE_MAP: Record<string, CuratedFemaleVoice['id']> = {
+const ALL_VOICE_IDS: VoiceId[] = ['ava', 'emma', 'jenny', 'sonia', 'natasha', 'andrew', 'ryan'];
+
+const LEGACY_VOICE_MAP: Record<string, VoiceId> = {
   'female-warm-us': 'ava',
   'female-exec-us': 'jenny',
   'female-soft-au': 'natasha',
@@ -54,10 +58,10 @@ const LEGACY_VOICE_MAP: Record<string, CuratedFemaleVoice['id']> = {
   'female-gentle-ie': 'emma',
 };
 
-export function normalizeVoiceId(id?: string): CuratedFemaleVoice['id'] {
+export function normalizeVoiceId(id?: string): VoiceId {
   if (!id) return 'ava';
-  if (CURATED_FEMALE_VOICES.some((v) => v.id === id)) {
-    return id as CuratedFemaleVoice['id'];
+  if (ALL_VOICE_IDS.includes(id as VoiceId)) {
+    return id as VoiceId;
   }
   return LEGACY_VOICE_MAP[id] ?? 'ava';
 }
