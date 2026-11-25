@@ -3,12 +3,15 @@ import {
   Award,
   Bookmark,
   BookOpen,
+  Briefcase,
   CheckCircle2,
   Coffee,
   Cpu,
   Download,
   FilePlus2,
   Flame,
+  Globe,
+  GraduationCap,
   Landmark,
   Palette,
   Plane,
@@ -24,7 +27,14 @@ import {
   Volume2,
   X,
 } from 'lucide-react';
-import type { LearningGoal, Lesson, Track, UiThemeId, UserProgress } from '../types/curriculum';
+import type {
+  LearningGoal,
+  Lesson,
+  ProgramId,
+  Track,
+  UiThemeId,
+  UserProgress,
+} from '../types/curriculum';
 import { computeTrackStats, isLessonMastered } from '../utils/progressStore';
 import { CURATED_FEMALE_VOICES, speakSentence } from '../utils/speechEngine';
 import { buildPersonalRoadmap, getLessonsPerDay } from '../utils/roadmap';
@@ -35,6 +45,7 @@ interface DashboardViewProps {
   progress: UserProgress;
   lessons: Lesson[];
   electiveLessons: Lesson[];
+  examLessons?: Lesson[];
   onSelectLesson: (lesson: Lesson) => void;
   onStartWeeklyTest: (week: 1 | 2 | 3 | 4) => void;
   onOpenCustomModal: () => void;
@@ -66,12 +77,43 @@ const TRACK_META: Record<
   legal: { label: 'Pháp chế', shortLabel: 'Pháp chế', color: 'bg-violet-600', icon: Scale },
   travel: { label: 'Du lịch', shortLabel: 'Du lịch', color: 'bg-cyan-600', icon: Plane },
   daily: { label: 'Đời sống', shortLabel: 'Đời sống', color: 'bg-rose-600', icon: Coffee },
+  ielts: { label: 'IELTS (Cambridge)', shortLabel: 'IELTS', color: 'bg-indigo-600', icon: GraduationCap },
+  toefl: { label: 'TOEFL iBT 2026', shortLabel: 'TOEFL 2026', color: 'bg-teal-600', icon: Globe },
+  toeic: { label: 'TOEIC Workplace', shortLabel: 'TOEIC', color: 'bg-blue-600', icon: Briefcase },
 };
+
+const PROGRAM_META: { id: ProgramId; label: string; badge: string; desc: string }[] = [
+  {
+    id: 'banking',
+    label: 'Ngân hàng & Công sở',
+    badge: '32 bài',
+    desc: 'Tài chính, Tín dụng, CNTT, Pháp chế, Du lịch & Đời sống',
+  },
+  {
+    id: 'ielts',
+    label: 'IELTS (Cambridge)',
+    badge: 'Band 7–8',
+    desc: 'Speaking Part 1/3 & Listening Section 3 (bẫy distractor chuẩn UK/AU)',
+  },
+  {
+    id: 'toefl',
+    label: 'TOEFL iBT 2026',
+    badge: 'ETS 2026',
+    desc: 'Format mới 2026 (thang 1.0–6.0): Academic Discussion & Campus',
+  },
+  {
+    id: 'toeic',
+    label: 'TOEIC Workplace',
+    badge: 'ETS Part 3',
+    desc: 'Hội thoại công sở quốc tế: Audit, Vendor & Corporate Travel',
+  },
+];
 
 export function DashboardView({
   progress,
   lessons,
   electiveLessons,
+  examLessons = [],
   onSelectLesson,
   onStartWeeklyTest,
   onOpenCustomModal,
@@ -84,12 +126,14 @@ export function DashboardView({
   onReopenOnboarding,
 }: DashboardViewProps) {
   const [activeTab, setActiveTab] = useState<DashboardTab>('today');
+  const [activeProgram, setActiveProgram] = useState<ProgramId>('banking');
   const [topicFilter, setTopicFilter] = useState<'all' | Track>('all');
   const [selectedWeek, setSelectedWeek] = useState<1 | 2 | 3 | 4>(1);
   const [showSettings, setShowSettings] = useState(false);
   const [importStatus, setImportStatus] = useState<string | null>(null);
 
-  const allPool = [...lessons, ...electiveLessons];
+  const bankingPool = [...lessons, ...electiveLessons];
+  const allPool = [...bankingPool, ...examLessons];
   const personalRoadmap = buildPersonalRoadmap(progress, allPool);
   const dailyTargetCount = getLessonsPerDay(progress.profile.dailyMinutesTarget);
   const nextLessons = personalRoadmap.filter(
@@ -122,9 +166,15 @@ export function DashboardView({
     reader.readAsText(file);
   };
 
-  const filteredTopics = allPool.filter(
-    (l) => topicFilter === 'all' || l.track === topicFilter
-  );
+  const programPool =
+    activeProgram === 'banking'
+      ? bankingPool
+      : examLessons.filter((l) => l.program === activeProgram || l.track === activeProgram);
+
+  const filteredTopics =
+    activeProgram === 'banking'
+      ? programPool.filter((l) => topicFilter === 'all' || l.track === topicFilter)
+      : programPool;
 
   return (
     <div className="mx-auto max-w-3xl space-y-5">
@@ -361,7 +411,7 @@ export function DashboardView({
 
             <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-4">
               <div className="text-xs font-semibold text-slate-600">
-                Gồm 5 bước: Phụ đề • Shadowing sửa từng chữ • Chính tả • Điền từ • Mini-Game
+                3 bước dễ học: 1. Nghe hội thoại 2 vai + Hiểu bài • 2. Nhập vai Nói AI • 3. Thử thách & Game
               </div>
               <button
                 type="button"
@@ -372,6 +422,45 @@ export function DashboardView({
               </button>
             </div>
           </div>
+
+          {/* International Exam Programs Quick Jump (IELTS / TOEFL iBT 2026 / TOEIC) */}
+          {examLessons.length > 0 && (
+            <div className="space-y-2.5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="flex items-center justify-between">
+                <h2 className="text-sm font-extrabold text-slate-900">
+                  Chương trình Luyện thi Quốc tế (Hội thoại 2 vai)
+                </h2>
+                <span className="text-[11px] font-bold text-indigo-700">Mới cập nhật 2026</span>
+              </div>
+              <div className="grid gap-2.5 sm:grid-cols-3">
+                {(['ielts', 'toefl', 'toeic'] as ProgramId[]).map((pid) => {
+                  const pMeta = PROGRAM_META.find((p) => p.id === pid)!;
+                  const firstExam = examLessons.find((l) => l.program === pid || l.track === pid);
+                  return (
+                    <button
+                      key={pid}
+                      type="button"
+                      onClick={() => {
+                        setActiveProgram(pid);
+                        setActiveTab('topics');
+                      }}
+                      className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-left transition hover:border-indigo-400 hover:bg-indigo-50/50"
+                    >
+                      <div className="flex items-center justify-between gap-1">
+                        <span className="text-xs font-extrabold text-slate-900">{pMeta.label}</span>
+                        <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-bold text-indigo-800">
+                          {pMeta.badge}
+                        </span>
+                      </div>
+                      <p className="mt-1 line-clamp-2 text-[11px] font-medium text-slate-600">
+                        {firstExam ? firstExam.title : pMeta.desc}
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Up Next (Max 3 focused items) */}
           {upNextLessons.length > 0 && (
@@ -438,38 +527,68 @@ export function DashboardView({
       {/* TAB 2: TOPICS & WEEKLY ROADMAP */}
       {activeTab === 'topics' && (
         <div className="space-y-4">
-          {/* Topic Filter Pills */}
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <p className="mb-2.5 text-xs font-extrabold uppercase tracking-wider text-slate-500">
-              Chọn chủ đề tập trung
+          {/* 4-Program Switcher */}
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm space-y-3">
+            <p className="text-xs font-extrabold uppercase tracking-wider text-slate-500">
+              Chọn chương trình học (4 lộ trình chuẩn hóa)
             </p>
-            <div className="flex flex-wrap gap-1.5">
-              <button
-                type="button"
-                onClick={() => setTopicFilter('all')}
-                className={`rounded-full border px-3 py-1.5 text-xs font-bold ${
-                  topicFilter === 'all'
-                    ? 'border-emerald-600 bg-emerald-600 text-white'
-                    : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
-                }`}
-              >
-                Tất cả ({allPool.length})
-              </button>
-              {(['finance', 'credit', 'tech', 'legal', 'travel', 'daily'] as Track[]).map((tr) => (
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {PROGRAM_META.map((p) => {
+                const active = activeProgram === p.id;
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => {
+                      setActiveProgram(p.id);
+                      setTopicFilter('all');
+                    }}
+                    className={`rounded-xl border p-2.5 text-left transition ${
+                      active
+                        ? 'border-emerald-600 bg-emerald-50 ring-1 ring-emerald-600'
+                        : 'border-slate-200 bg-slate-50 hover:bg-slate-100'
+                    }`}
+                  >
+                    <p className="text-xs font-extrabold text-slate-900">{p.label}</p>
+                    <p className="mt-0.5 text-[10px] font-bold text-emerald-700">{p.badge}</p>
+                  </button>
+                );
+              })}
+            </div>
+
+            {activeProgram === 'banking' ? (
+              <div className="flex flex-wrap gap-1.5 border-t border-slate-100 pt-3">
                 <button
-                  key={tr}
                   type="button"
-                  onClick={() => setTopicFilter(tr)}
+                  onClick={() => setTopicFilter('all')}
                   className={`rounded-full border px-3 py-1.5 text-xs font-bold ${
-                    topicFilter === tr
+                    topicFilter === 'all'
                       ? 'border-emerald-600 bg-emerald-600 text-white'
                       : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
                   }`}
                 >
-                  {TRACK_META[tr].shortLabel}
+                  Tất cả ({bankingPool.length})
                 </button>
-              ))}
-            </div>
+                {(['finance', 'credit', 'tech', 'legal', 'travel', 'daily'] as Track[]).map((tr) => (
+                  <button
+                    key={tr}
+                    type="button"
+                    onClick={() => setTopicFilter(tr)}
+                    className={`rounded-full border px-3 py-1.5 text-xs font-bold ${
+                      topicFilter === tr
+                        ? 'border-emerald-600 bg-emerald-600 text-white'
+                        : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
+                    }`}
+                  >
+                    {TRACK_META[tr].shortLabel}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <p className="border-t border-slate-100 pt-2.5 text-xs font-medium text-slate-600">
+                {PROGRAM_META.find((p) => p.id === activeProgram)?.desc}
+              </p>
+            )}
           </div>
 
           {/* Focused Lesson List */}
@@ -562,11 +681,11 @@ export function DashboardView({
             </div>
           </div>
 
-          {/* 6 Tracks Progress */}
+          {/* 9 Tracks Progress */}
           <div className="space-y-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <h2 className="text-sm font-extrabold text-slate-900">Tiến độ theo từng lĩnh vực</h2>
+            <h2 className="text-sm font-extrabold text-slate-900">Tiến độ theo từng lĩnh vực & kỳ thi</h2>
             <div className="grid gap-3 sm:grid-cols-2">
-              {(['finance', 'credit', 'tech', 'legal', 'travel', 'daily'] as Track[]).map((tr) => {
+              {(['finance', 'credit', 'tech', 'legal', 'travel', 'daily', 'ielts', 'toefl', 'toeic'] as Track[]).map((tr) => {
                 const meta = TRACK_META[tr];
                 const stat = trackStats[tr];
                 return (

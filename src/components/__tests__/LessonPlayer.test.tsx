@@ -16,6 +16,8 @@ const MOCK_LESSON: Lesson = {
     {
       id: 's1',
       startTime: '00:00',
+      speaker: 'Sarah (CFO)',
+      role: 'A',
       en: 'Our net interest margin expanded rapidly.',
       vi: 'Biên lãi thuần của chúng ta tăng nhanh.',
       clozeWord: 'margin',
@@ -24,38 +26,54 @@ const MOCK_LESSON: Lesson = {
     {
       id: 's2',
       startTime: '00:08',
+      speaker: 'Linh (Treasury)',
+      role: 'B',
       en: 'Lower funding costs drove strong profitability.',
       vi: 'Chi phí vốn thấp hơn thúc đẩy lợi nhuận.',
       clozeWord: 'funding',
       keywords: ['funding'],
     },
   ],
+  comprehension: {
+    question: 'What drove the strong profitability?',
+    options: ['Higher fees', 'Lower funding costs', 'Branch expansion'],
+    answerIndex: 1,
+    explanationVi: 'Linh nói rõ chi phí vốn thấp hơn (Lower funding costs) thúc đẩy lợi nhuận.',
+  },
 };
 
 describe('LessonPlayer', () => {
-  it('renders 4 mode tabs and toggles No-Sub cleanly', () => {
+  it('renders guided 3-step stepper, 2-role dialogue bubbles, comprehension quiz, and toggles No-Sub cleanly', () => {
     render(<LessonPlayer lesson={MOCK_LESSON} onComplete={vi.fn()} onBack={vi.fn()} />);
 
     expect(screen.getByText('Net Interest Margin Briefing')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Phụ đề/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Shadowing/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Chính tả/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Điền từ/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Bước 1\s*Nghe Hội thoại$/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Bước 2\s*Nhập vai Nói$/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Bước 3\s*Thử thách$/i })).toBeInTheDocument();
 
-    // Subtitle visible by default (rendered in both stage and transcript list)
+    // 2-role dialogue speaker badges visible
+    expect(screen.getByText(/Vai A • Sarah \(CFO\)/i)).toBeInTheDocument();
+    expect(screen.getByText(/Vai B • Linh \(Treasury\)/i)).toBeInTheDocument();
+
+    // Comprehension check works interactively
+    expect(screen.getByText('What drove the strong profitability?')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Lower funding costs' }));
+    expect(screen.getByText(/✓ Chính xác!/i)).toBeInTheDocument();
+
+    // Subtitle visible by default
     expect(screen.getAllByText('Biên lãi thuần của chúng ta tăng nhanh.').length).toBeGreaterThanOrEqual(1);
 
-    // Toggle No-Sub hides both English and Vietnamese subtitle text in list
+    // Toggle No-Sub hides subtitle text
     fireEvent.click(screen.getByRole('button', { name: /No-Sub/i }));
     expect(screen.queryByText('Biên lãi thuần của chúng ta tăng nhanh.')).not.toBeInTheDocument();
     expect(screen.getByText(/Chế độ nghe không phụ đề/i)).toBeInTheDocument();
   });
 
-  it('validates Cloze (Điền từ) answer accurately', () => {
+  it('validates Cloze (Điền từ) answer accurately inside Step 3', () => {
     const onComplete = vi.fn();
     render(<LessonPlayer lesson={MOCK_LESSON} onComplete={onComplete} onBack={vi.fn()} />);
 
-    fireEvent.click(screen.getByRole('button', { name: /Điền từ/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Bước 3.*Thử thách/i }));
     const inputs = screen.getAllByPlaceholderText(/Nhập từ còn thiếu/i);
     fireEvent.change(inputs[0], { target: { value: 'margin' } });
     fireEvent.change(inputs[1], { target: { value: 'funding' } });
@@ -65,12 +83,12 @@ describe('LessonPlayer', () => {
     expect(onComplete).toHaveBeenCalledWith(expect.objectContaining({ clozeDone: true }));
   });
 
-  it('scores Dictation (Chính tả) and shows word-level badges', () => {
+  it('scores Dictation (Chính tả) and shows word-level badges inside Step 3', () => {
     const onComplete = vi.fn();
     render(<LessonPlayer lesson={MOCK_LESSON} onComplete={onComplete} onBack={vi.fn()} />);
 
+    fireEvent.click(screen.getByRole('button', { name: /Bước 3.*Thử thách/i }));
     fireEvent.click(screen.getByRole('button', { name: /Chính tả/i }));
-    // Sentence selector is present in Dictation tab too
     expect(screen.getByRole('button', { name: '2' })).toBeInTheDocument();
     const textarea = screen.getByPlaceholderText(/Nghe và gõ lại nguyên văn/i);
     fireEvent.change(textarea, { target: { value: 'Our net interest expanded rapidly.' } });
@@ -80,11 +98,11 @@ describe('LessonPlayer', () => {
     expect(onComplete).toHaveBeenCalledWith(expect.objectContaining({ dictationScore: expect.any(Number) }));
   });
 
-  it('provides manual fallback scoring in Shadowing when SpeechRecognition is unavailable', () => {
+  it('provides manual fallback scoring in Step 2 (Nhập vai Nói)', () => {
     const onComplete = vi.fn();
     render(<LessonPlayer lesson={MOCK_LESSON} onComplete={onComplete} onBack={vi.fn()} />);
 
-    fireEvent.click(screen.getByRole('button', { name: /Shadowing/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^Bước 2\s*Nhập vai Nói$/i }));
     fireEvent.click(screen.getByRole('button', { name: /Hoặc nhập văn bản thủ công/i }));
     const fallbackInput = screen.getByPlaceholderText(/Nhập hoặc dán câu bạn vừa nói/i);
     fireEvent.change(fallbackInput, { target: { value: 'Our net interest margin expanded rapidly' } });
@@ -97,7 +115,7 @@ describe('LessonPlayer', () => {
   it('shows word-by-word correction coach when words are mispronounced or skipped', () => {
     render(<LessonPlayer lesson={MOCK_LESSON} onComplete={vi.fn()} onBack={vi.fn()} />);
 
-    fireEvent.click(screen.getByRole('button', { name: /Shadowing/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^Bước 2\s*Nhập vai Nói$/i }));
     fireEvent.click(screen.getByRole('button', { name: /Hoặc nhập văn bản thủ công/i }));
     const fallbackInput = screen.getByPlaceholderText(/Nhập hoặc dán câu bạn vừa nói/i);
     fireEvent.change(fallbackInput, { target: { value: 'Our net interest magin expanded' } });

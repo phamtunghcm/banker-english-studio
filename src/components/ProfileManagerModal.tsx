@@ -30,6 +30,9 @@ const TRACK_OPTIONS: { id: Track; label: string }[] = [
   { id: 'legal', label: 'Pháp chế' },
   { id: 'travel', label: 'Du lịch & Công tác' },
   { id: 'daily', label: 'Đời sống' },
+  { id: 'ielts', label: 'IELTS' },
+  { id: 'toefl', label: 'TOEFL 2026' },
+  { id: 'toeic', label: 'TOEIC' },
 ];
 
 const GOAL_OPTIONS: { id: LearningGoal; label: string }[] = [

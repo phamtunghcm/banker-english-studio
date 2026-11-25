@@ -36,6 +36,9 @@ const TRACK_OPTIONS: { id: Track; label: string; desc: string }[] = [
   { id: 'legal', label: 'Pháp chế (Legal)', desc: 'NDA, hợp đồng, PDPA, kiểm toán tuân thủ' },
   { id: 'travel', label: 'Du lịch & Công tác', desc: 'Sân bay, khách sạn, ăn tối đối tác' },
   { id: 'daily', label: 'Đời sống hàng ngày', desc: 'Small talk, sức khỏe, giao tiếp tự nhiên' },
+  { id: 'ielts', label: 'Luyện thi IELTS', desc: 'Cambridge Band 7.0–8.0 • Speaking & Listening' },
+  { id: 'toefl', label: 'TOEFL iBT 2026', desc: 'Chuẩn ETS 2026 mới • Academic Discussion & Campus' },
+  { id: 'toeic', label: 'Luyện thi TOEIC', desc: 'ETS Part 3 & Workplace • Audit, Vendor, Travel' },
 ];
 
 const GOAL_OPTIONS: { id: LearningGoal; label: string; sub: string }[] = [
@@ -144,7 +147,7 @@ export function OnboardingModal({
               Luyện Nghe – Nói Tiếng Anh Ngân Hàng với AI
             </h1>
             <p className="text-xs font-semibold text-slate-600">
-              32 chủ đề thực chiến • 5 giọng nữ bản xứ Neural • Chấm sửa từng chữ bằng Whisper AI (15p/ngày)
+              38 bài hội thoại 2 vai (Ngân hàng, IELTS, TOEFL 2026, TOEIC) • 5 giọng nữ Neural • Chấm từng chữ bằng Whisper AI
             </p>
           </div>
         </div>

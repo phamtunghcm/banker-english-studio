@@ -106,6 +106,9 @@ export function CustomLessonModal({ onCreate, onClose }: CustomLessonModalProps)
               <option value="legal">Pháp chế & Tuân thủ (Legal)</option>
               <option value="travel">Du lịch & Công tác (Travel)</option>
               <option value="daily">Đời sống hàng ngày (Daily Life)</option>
+              <option value="ielts">Luyện thi IELTS</option>
+              <option value="toefl">Luyện thi TOEFL iBT 2026</option>
+              <option value="toeic">Luyện thi TOEIC</option>
             </select>
           </div>
         </div>

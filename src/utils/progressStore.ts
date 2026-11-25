@@ -329,7 +329,17 @@ export function computeTrackStats(
   progress: UserProgress,
   lessons: Lesson[]
 ): Record<Track, { completed: number; total: number; percent: number }> {
-  const tracks: Track[] = ['finance', 'credit', 'tech', 'legal', 'travel', 'daily'];
+  const tracks: Track[] = [
+    'finance',
+    'credit',
+    'tech',
+    'legal',
+    'travel',
+    'daily',
+    'ielts',
+    'toefl',
+    'toeic',
+  ];
   const result = {} as Record<Track, { completed: number; total: number; percent: number }>;
 
   for (const track of tracks) {

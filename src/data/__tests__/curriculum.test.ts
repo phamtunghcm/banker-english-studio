@@ -3,18 +3,20 @@ import {
   ALL_LESSONS,
   CORE_LESSONS,
   ELECTIVE_LESSONS,
+  EXAM_LESSONS,
   WEEKLY_TESTS,
   PLACEMENT_QUESTIONS,
 } from '../index';
 
 describe('curriculum data integrity', () => {
-  it('contains 24 core roadmap lessons and 8 elective lessons with unique IDs', () => {
+  it('contains 24 core roadmap lessons, 8 elective lessons, and 6 exam lessons with unique IDs', () => {
     expect(CORE_LESSONS).toHaveLength(24);
     expect(ELECTIVE_LESSONS).toHaveLength(8);
-    expect(ALL_LESSONS).toHaveLength(32);
+    expect(EXAM_LESSONS).toHaveLength(6);
+    expect(ALL_LESSONS).toHaveLength(38);
 
     const ids = new Set(ALL_LESSONS.map((l) => l.id));
-    expect(ids.size).toBe(32);
+    expect(ids.size).toBe(38);
 
     for (const week of [1, 2, 3, 4] as const) {
       const weekLessons = CORE_LESSONS.filter((l) => l.week === week);
@@ -22,9 +24,11 @@ describe('curriculum data integrity', () => {
     }
   });
 
-  it('covers all 6 tracks: finance, credit, tech, legal, travel, and daily', () => {
+  it('covers all 9 tracks: finance, credit, tech, legal, travel, daily, ielts, toefl, and toeic', () => {
     const tracks = new Set(ALL_LESSONS.map((l) => l.track));
-    expect(tracks).toEqual(new Set(['finance', 'credit', 'tech', 'legal', 'travel', 'daily']));
+    expect(tracks).toEqual(
+      new Set(['finance', 'credit', 'tech', 'legal', 'travel', 'daily', 'ielts', 'toefl', 'toeic'])
+    );
   });
 
   it('ensures every sentence has non-empty en/vi/startTime and clozeWord appears in en', () => {

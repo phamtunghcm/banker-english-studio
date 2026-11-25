@@ -1,10 +1,15 @@
+export type ProgramId = 'banking' | 'ielts' | 'toefl' | 'toeic';
+
 export type Track =
   | 'finance'
   | 'credit'
   | 'tech'
   | 'legal'
   | 'travel'
-  | 'daily';
+  | 'daily'
+  | 'ielts'
+  | 'toefl'
+  | 'toeic';
 
 export type LevelTier = 'foundation' | 'professional' | 'executive';
 
@@ -53,14 +58,24 @@ export interface WordScoreResult {
 export interface LessonSentence {
   id: string;
   startTime: string;
+  speaker?: string;
+  role?: 'A' | 'B';
   en: string;
   vi: string;
   clozeWord: string;
   keywords: string[];
 }
 
+export interface ComprehensionCheck {
+  question: string;
+  options: string[];
+  answerIndex: number;
+  explanationVi?: string;
+}
+
 export interface Lesson {
   id: string;
+  program?: ProgramId;
   week: 1 | 2 | 3 | 4;
   day: number;
   track: Track;
@@ -68,6 +83,7 @@ export interface Lesson {
   title: string;
   scenario: string;
   sentences: LessonSentence[];
+  comprehension?: ComprehensionCheck;
   isCustom?: boolean;
 }
 

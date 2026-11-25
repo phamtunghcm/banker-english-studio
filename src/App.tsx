@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ALL_LESSONS, CORE_LESSONS, ELECTIVE_LESSONS, WEEKLY_TESTS } from './data';
+import { ALL_LESSONS, CORE_LESSONS, ELECTIVE_LESSONS, EXAM_LESSONS, WEEKLY_TESTS } from './data';
 import type {
   Lesson,
   LevelTier,
@@ -176,6 +176,7 @@ export function App() {
           progress={progress}
           lessons={CORE_LESSONS}
           electiveLessons={ELECTIVE_LESSONS}
+          examLessons={EXAM_LESSONS}
           onSelectLesson={(lesson) => setActiveLesson(lesson)}
           onStartWeeklyTest={(week) => setActiveTestWeek(week)}
           onOpenCustomModal={() => setShowCustomModal(true)}
